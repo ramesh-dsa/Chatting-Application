@@ -27,9 +27,11 @@ export interface Message {
   senderId: string | null;
   text: string;
   attachmentUrl?: string;
-  attachmentType?: 'image' | 'file';
+  attachmentType?: 'image' | 'video' | 'document';
+  attachmentName?: string;
+  attachmentSize?: number;
   timestamp: number;
   readBy: string[]; // Array of UIDs
   deliveredTo?: string[]; // Array of UIDs
-  type: 'text' | 'image' | 'file' | 'system';
+  type: 'text' | 'image' | 'video' | 'document' | 'system';
 }

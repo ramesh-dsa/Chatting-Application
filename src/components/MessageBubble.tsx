@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { Check, CheckCheck } from 'lucide-react';
+import { Check, CheckCheck, FileText, Download } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 
 interface MessageBubbleProps {
@@ -100,16 +100,40 @@ export default function MessageBubble({
                   : 'bg-surface border border-border text-foreground'
             }`}
           >
-            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mr-12">{message.text}</p>
+            {message.text && (
+              <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${message.attachmentUrl ? 'mb-2' : ''} mr-12`}>
+                {message.text}
+              </p>
+            )}
             
             {/* Attachment placeholder */}
             {message.attachmentUrl && (
-              <div className="mt-2 mb-1 mr-10">
+              <div className={`mt-1 mb-4 ${message.attachmentType === 'document' ? 'mr-0' : 'mr-4'}`}>
                 {message.attachmentType === 'image' ? (
                   <img src={message.attachmentUrl} alt="attachment" className="rounded-lg max-w-full h-auto max-h-64 object-cover" />
+                ) : message.attachmentType === 'video' ? (
+                  <video src={message.attachmentUrl} controls className="rounded-lg max-w-full h-auto max-h-64 object-cover" />
                 ) : (
-                  <a href={message.attachmentUrl} target="_blank" rel="noopener noreferrer" className="underline text-sm text-blue-600">
-                    View File
+                  <a 
+                    href={message.attachmentUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className={`flex items-center gap-3 p-2.5 rounded-xl border ${isOwnMessage ? 'bg-black/5 border-black/10' : 'bg-surface border-border'} hover:opacity-80 transition-opacity`}
+                  >
+                    <div className={`${isOwnMessage ? 'bg-black/10 text-emerald-800' : 'bg-emerald-100 text-emerald-600'} p-2 rounded-lg flex-shrink-0`}>
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0 pr-4">
+                      <p className="text-sm font-medium truncate">{message.attachmentName || 'Document'}</p>
+                      {message.attachmentSize && (
+                        <p className={`text-xs mt-0.5 ${isOwnMessage ? 'text-emerald-800/70' : 'text-muted-foreground'}`}>
+                          {(message.attachmentSize / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      )}
+                    </div>
+                    <div className={`flex-shrink-0 p-1.5 rounded-full ${isOwnMessage ? 'bg-black/10 text-emerald-800' : 'bg-black/5 text-muted-foreground'}`}>
+                      <Download className="w-4 h-4" />
+                    </div>
                   </a>
                 )}
               </div>

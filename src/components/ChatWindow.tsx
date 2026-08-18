@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
-import { db } from '../lib/firebase';
+import { db, storage } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile } from '../types';
 import MessageBubble from './MessageBubble';
@@ -40,6 +41,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Search states
   const [isSearching, setIsSearching] = useState(false);
@@ -212,17 +214,78 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
     return () => unsubMessages();
   }, [conversationId, userProfile]);
 
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (text: string, file?: File | null) => {
     if (!userProfile || !conversationId) return;
 
     try {
-      const msgData = {
+      let attachmentUrl = '';
+      let attachmentType = '';
+      let attachmentName = '';
+      let attachmentSize = 0;
+
+      if (file) {
+        setUploadProgress(0);
+        const fileExtension = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+        const storageRef = ref(storage, `attachments/${conversationId}/${fileName}`);
+        
+        const uploadTask = uploadBytesResumable(storageRef, file);
+
+        await new Promise<void>((resolve, reject) => {
+          let timeoutId = setTimeout(() => {
+            if (uploadTask.snapshot.state === 'running' && uploadTask.snapshot.bytesTransferred === 0) {
+              uploadTask.cancel();
+              reject(new Error("Upload timed out. Firebase Storage might not be enabled in your console, or rules are blocking it."));
+            }
+          }, 15000); // 15s timeout
+
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              if (progress > 0) clearTimeout(timeoutId);
+              setUploadProgress(progress);
+            },
+            (error) => {
+              clearTimeout(timeoutId);
+              console.error("Upload failed:", error);
+              reject(error);
+            },
+            async () => {
+              clearTimeout(timeoutId);
+              try {
+                attachmentUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                resolve();
+              } catch (err) {
+                reject(err);
+              }
+            }
+          );
+        });
+
+        if (file.type.startsWith('image/')) attachmentType = 'image';
+        else if (file.type.startsWith('video/')) attachmentType = 'video';
+        else attachmentType = 'document';
+        
+        attachmentName = file.name;
+        attachmentSize = file.size;
+        setUploadProgress(null);
+      }
+
+      const msgData: any = {
         senderId: userProfile.uid,
         text: text.trim(),
         timestamp: Date.now(),
         readBy: [userProfile.uid],
-        type: 'text'
+        type: attachmentType ? attachmentType : 'text'
       };
+
+      if (attachmentUrl) {
+        msgData.attachmentUrl = attachmentUrl;
+        msgData.attachmentType = attachmentType;
+        msgData.attachmentName = attachmentName;
+        msgData.attachmentSize = attachmentSize;
+      }
 
       await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
 
@@ -238,12 +301,14 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
 
       // Update the conversation's last message and unread counts
       await updateDoc(doc(db, 'conversations', conversationId), {
-        lastMessage: text.trim(),
+        lastMessage: attachmentType ? `[${attachmentType === 'image' ? 'Photo' : attachmentType === 'video' ? 'Video' : 'Document'}] ${text.trim()}` : text.trim(),
         lastMessageTimestamp: Date.now(),
         updatedAt: Date.now(),
         ...unreadUpdates
       });
-    } catch (error) {
+    } catch (error: any) {
+      setUploadProgress(null);
+      setToastMessage(error.message || "Failed to send message/file");
       console.error("Error sending message:", error);
       throw error;
     }
@@ -451,7 +516,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
       </div>
 
       {/* Input Area */}
-      <MessageInput onSendMessage={handleSendMessage} />
+      <MessageInput onSendMessage={handleSendMessage} uploadProgress={uploadProgress} />
     </div>
 
     {/* Group Info Panel */}
