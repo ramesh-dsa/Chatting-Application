@@ -3,6 +3,7 @@ export interface UserProfile {
   displayName: string;
   photoURL: string;
   statusMessage: string;
+  about?: string;
   isOnline: boolean;
   lastSeen: number; // Unix timestamp
 }
@@ -13,6 +14,7 @@ export interface Conversation {
   participants: string[]; // Array of UIDs
   groupName?: string;
   groupPhoto?: string;
+  description?: string;
   createdBy?: string;
   createdAt?: number;
   admins?: string[];

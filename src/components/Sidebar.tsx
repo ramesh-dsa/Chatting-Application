@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile, Message } from '../types';
 import { format, isToday, isYesterday } from 'date-fns';
 import NewChatModal from './NewChatModal';
+import MyProfilePanel from './MyProfilePanel';
 
 function formatSidebarTime(timestamp: number) {
   if (!timestamp) return '';
@@ -29,6 +30,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [showMyProfile, setShowMyProfile] = useState(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
@@ -220,6 +222,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
 
     if (isGroup) {
       displayName = convo.groupName || 'Group';
+      photoURL = convo.groupPhoto || '';
     } else {
       const otherUserId = convo.participants.find(id => id !== currentUser?.uid);
       if (otherUserId && usersMap[otherUserId]) {
@@ -230,11 +233,18 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     return { displayName, photoURL, isGroup };
   };
 
+  if (showMyProfile) {
+    return <MyProfilePanel onClose={() => setShowMyProfile(false)} />;
+  }
+
   return (
     <div className="w-full h-full flex flex-col bg-surface">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
-        <div className="flex items-center space-x-3">
+        <div 
+          className="flex items-center space-x-3 cursor-pointer hover:bg-background/50 p-1.5 -ml-1.5 rounded-lg transition-colors"
+          onClick={() => setShowMyProfile(true)}
+        >
           <div className="relative">
             {userProfile?.photoURL ? (
               <img 
@@ -334,7 +344,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                           }`}
                         >
                           <div className="relative flex-shrink-0">
-                            {isGroup ? (
+                            {isGroup && !photoURL ? (
                               <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent">
                                 <Users className="w-6 h-6" />
                               </div>

@@ -413,7 +413,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
     const otherUser = otherUid ? usersMap[otherUid] : null;
     chatTitle = otherUser?.displayName || 'User';
-    chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.lastSeen ? 'Offline' : '');
+    chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.about || 'Hey there! I am using Chat.');
     chatAvatar = otherUser?.photoURL || 'https://api.dicebear.com/7.x/initials/svg?seed=U';
   }
 
@@ -626,6 +626,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 onToggleSelect={handleToggleSelect}
                 onForward={handleForwardClick}
                 onCopy={handleCopyClick}
+                onSelectMode={handleForwardClick}
               />
             </React.Fragment>
           );

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { X, Camera, Edit2, UserPlus, LogOut, Check, Shield, ShieldOff } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
 import { doc, updateDoc, arrayRemove, arrayUnion, collection, getDocs, addDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile } from '../types';
 import { format } from 'date-fns';
@@ -18,6 +17,8 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
   const { userProfile } = useAuth();
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState(conversation.groupName || '');
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [newDescription, setNewDescription] = useState(conversation.description || '');
   const [showAddMember, setShowAddMember] = useState(false);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -64,15 +65,47 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
     setIsEditingName(false);
   };
 
+  const handleUpdateDescription = async () => {
+    if (!newDescription.trim() || newDescription.trim() === conversation.description) {
+      setIsEditingDescription(false);
+      return;
+    }
+    await updateDoc(doc(db, 'conversations', conversation.id), {
+      description: newDescription.trim(),
+      updatedAt: Date.now()
+    });
+    await handleSystemMessage(`${userProfile?.displayName} changed the group description`);
+    setIsEditingDescription(false);
+  };
+
   const handleUpdatePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !isAdmin) return;
 
     try {
       setUploadingImage(true);
-      const storageRef = ref(storage, `group-photos/${conversation.id}-${Date.now()}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+      if (!cloudName || !uploadPreset) {
+        throw new Error("Cloudinary configuration missing");
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', uploadPreset);
+
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+
+      const data = await response.json();
+      const url = data.secure_url;
 
       await updateDoc(doc(db, 'conversations', conversation.id), {
         groupPhoto: url,
@@ -269,7 +302,47 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
 
       {/* Details */}
       <div className="p-4 bg-background mt-2 border-y border-border">
-        <p className="text-sm text-muted-foreground">
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold text-accent">Description</h3>
+            {isAdmin && !isEditingDescription && (
+              <button onClick={() => setIsEditingDescription(true)} className="p-1 text-muted-foreground hover:text-foreground">
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {isEditingDescription ? (
+            <div className="flex flex-col space-y-2">
+              <textarea 
+                value={newDescription} 
+                onChange={e => setNewDescription(e.target.value)}
+                className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent resize-none h-20"
+                placeholder="Add group description..."
+                autoFocus
+              />
+              <div className="flex justify-end space-x-2">
+                <button 
+                  onClick={() => setIsEditingDescription(false)} 
+                  className="px-3 py-1 text-xs text-muted-foreground hover:bg-surface rounded-full"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleUpdateDescription} 
+                  className="px-3 py-1 text-xs bg-accent text-white rounded-full flex items-center space-x-1"
+                >
+                  <Check className="w-3 h-3" />
+                  <span>Save</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-foreground whitespace-pre-wrap">
+              {conversation.description || (isAdmin ? 'Add a group description...' : 'No description provided.')}
+            </p>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground pt-4 border-t border-border">
           Created by {creator?.displayName || 'Unknown'} {conversation.createdAt && `on ${format(conversation.createdAt, 'd MMM yyyy')}`}
         </p>
       </div>

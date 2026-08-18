@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { format } from 'date-fns';
-import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy } from 'lucide-react';
+import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 
 interface MessageBubbleProps {
@@ -18,6 +18,7 @@ interface MessageBubbleProps {
   onToggleSelect?: (messageId: string) => void;
   onForward?: (message: Message) => void;
   onCopy?: (message: Message) => void;
+  onSelectMode?: (message: Message) => void;
 }
 
 const MessageBubble = function MessageBubble({ 
@@ -34,7 +35,8 @@ const MessageBubble = function MessageBubble({
   isSelected,
   onToggleSelect,
   onForward,
-  onCopy
+  onCopy,
+  onSelectMode
 }: MessageBubbleProps) {
   const [showMenu, setShowMenu] = React.useState(false);
 
@@ -219,6 +221,17 @@ const MessageBubble = function MessageBubble({
             {/* Dropdown Menu */}
             {showMenu && (
               <div className="absolute top-6 right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-50 min-w-[120px]">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    onSelectMode?.(message);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                >
+                  <CheckSquare className="w-4 h-4" />
+                  Select
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
