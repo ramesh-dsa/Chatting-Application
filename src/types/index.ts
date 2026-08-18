@@ -34,4 +34,5 @@ export interface Message {
   readBy: string[]; // Array of UIDs
   deliveredTo?: string[]; // Array of UIDs
   type: 'text' | 'image' | 'video' | 'document' | 'system';
+  forwarded?: boolean;
 }

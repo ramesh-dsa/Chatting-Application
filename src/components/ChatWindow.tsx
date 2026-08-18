@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch, limit } from 'firebase/firestore';
 import { ref } from 'firebase/storage';
-import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile } from '../types';
@@ -9,6 +9,8 @@ import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import GroupInfoPanel from './GroupInfoPanel';
 import ImagePreviewModal from './ImagePreviewModal';
+import ForwardModal from './ForwardModal';
+import { copyImageToClipboard } from '../lib/clipboard';
 import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
 
 function getDateSeparatorLabel(date: Date): string {
@@ -54,6 +56,54 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+  // Forward state
+  const [forwardSelectionMode, setForwardSelectionMode] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [showForwardModal, setShowForwardModal] = useState(false);
+
+  const handleCopyClick = useCallback(async (message: Message) => {
+    try {
+      if (message.type === 'text') {
+        await navigator.clipboard.writeText(message.text || '');
+        setToastMessage('Copied to clipboard');
+      } else if (message.type === 'image') {
+        if (!message.attachmentUrl) throw new Error('No image URL');
+        await copyImageToClipboard(message.attachmentUrl);
+        setToastMessage('Copied to clipboard');
+      } else {
+        // Fallback for video/document
+        if (message.text) {
+          await navigator.clipboard.writeText(message.text);
+          setToastMessage('Copied to clipboard');
+        } else if (message.attachmentUrl) {
+          await navigator.clipboard.writeText(message.attachmentUrl);
+          setToastMessage('Copied to clipboard');
+        }
+      }
+    } catch (error) {
+      console.error('Copy failed:', error);
+      setToastMessage('Failed to copy');
+    }
+  }, []);
+
+  const handleForwardClick = useCallback((message: Message) => {
+    setForwardSelectionMode(true);
+    setSelectedMessageIds(new Set([message.id]));
+  }, []);
+
+  const handleToggleSelect = useCallback((messageId: string) => {
+    setSelectedMessageIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+        if (newSet.size === 0) setForwardSelectionMode(false);
+      } else {
+        newSet.add(messageId);
+      }
+      return newSet;
+    });
+  }, []);
 
   // Clear toast after 3 seconds
   useEffect(() => {
@@ -370,6 +420,32 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   return (
     <div className="flex-1 flex w-full h-full relative overflow-hidden">
       <div className="flex-1 flex flex-col w-full h-full bg-chat-bg relative">
+        {/* Forward Selection Header */}
+        {forwardSelectionMode && (
+          <div className="absolute top-0 left-0 right-0 h-16 bg-accent text-accent-foreground z-20 flex items-center justify-between px-4 animate-in slide-in-from-top-4 shadow-md">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => {
+                  setForwardSelectionMode(false);
+                  setSelectedMessageIds(new Set());
+                }}
+                className="p-2 hover:bg-black/10 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <span className="font-medium">{selectedMessageIds.size} selected</span>
+            </div>
+            <button 
+              onClick={() => setShowForwardModal(true)}
+              disabled={selectedMessageIds.size === 0}
+              className="p-2 hover:bg-black/10 rounded-full transition-colors disabled:opacity-50"
+              title="Forward"
+            >
+              <Forward className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10">
           {isSearching ? (
@@ -545,6 +621,11 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 isHighlighted={highlightedMessageId === msg.id}
                 participantCount={conversation.participants.length}
                 onImageClick={handleImageClick}
+                selectionMode={forwardSelectionMode}
+                isSelected={selectedMessageIds.has(msg.id)}
+                onToggleSelect={handleToggleSelect}
+                onForward={handleForwardClick}
+                onCopy={handleCopyClick}
               />
             </React.Fragment>
           );
@@ -555,6 +636,21 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       {/* Input Area */}
       <MessageInput onSendMessage={handleSendMessage} uploadProgress={uploadProgress} />
     </div>
+
+      {/* Modals & Panels */}
+      {showForwardModal && (
+        <ForwardModal 
+          selectedMessages={messages.filter(m => selectedMessageIds.has(m.id))}
+          usersMap={usersMap}
+          onClose={() => setShowForwardModal(false)}
+          onForwardComplete={(count) => {
+            setShowForwardModal(false);
+            setForwardSelectionMode(false);
+            setSelectedMessageIds(new Set());
+            setToastMessage(`Forwarded to ${count} chat${count !== 1 ? 's' : ''}`);
+          }}
+        />
+      )}
 
     {/* Group Info Panel */}
     {showGroupInfo && conversation.type === 'group' && (

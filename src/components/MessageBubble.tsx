@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, FileText, Download } from 'lucide-react';
+import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 
 interface MessageBubbleProps {
@@ -13,6 +13,11 @@ interface MessageBubbleProps {
   isHighlighted?: boolean;
   participantCount?: number;
   onImageClick?: (message: Message) => void;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (messageId: string) => void;
+  onForward?: (message: Message) => void;
+  onCopy?: (message: Message) => void;
 }
 
 const MessageBubble = function MessageBubble({ 
@@ -24,9 +29,21 @@ const MessageBubble = function MessageBubble({
   isGroupChat,
   isHighlighted,
   participantCount = 2,
-  onImageClick
+  onImageClick,
+  selectionMode,
+  isSelected,
+  onToggleSelect,
+  onForward,
+  onCopy
 }: MessageBubbleProps) {
-  
+  const [showMenu, setShowMenu] = React.useState(false);
+
+  const handleBubbleClick = () => {
+    if (selectionMode && onToggleSelect) {
+      onToggleSelect(message.id);
+    }
+  };
+
   if (message.type === 'system') {
     return (
       <div className="flex justify-center my-3 w-full">
@@ -69,8 +86,24 @@ const MessageBubble = function MessageBubble({
   }
 
   return (
-    <div className={`flex w-full ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`flex w-full ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-2' : ''}`}>
+      {selectionMode && (
+        <div className="flex items-center justify-center mr-3 mt-auto mb-2" onClick={() => onToggleSelect?.(message.id)}>
+          <div className="relative flex items-center justify-center w-5 h-5 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={isSelected || false}
+              readOnly
+              className="appearance-none w-5 h-5 border-2 border-muted rounded-full checked:bg-accent checked:border-accent transition-all cursor-pointer peer"
+            />
+            <CheckIcon className="w-3 h-3 text-accent-foreground absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
+          </div>
+        </div>
+      )}
+      <div 
+        className={`flex max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} ${selectionMode ? 'cursor-pointer' : ''}`}
+        onClick={handleBubbleClick}
+      >
         
         {/* Avatar Spacer for grouped messages */}
         {!isOwnMessage && isGroupChat && !isLastInGroup && (
@@ -95,14 +128,23 @@ const MessageBubble = function MessageBubble({
           
           <div 
             id={`msg-${message.id}`}
+            onMouseLeave={() => setShowMenu(false)}
             className={`px-3 pt-2 pb-1.5 relative group shadow-sm transition-colors duration-500 ${radiusClass} ${
-              isHighlighted 
+              isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
                   ? 'bg-[#d9fdd3] text-[#111b21]' 
                   : 'bg-surface border border-border text-foreground'
             }`}
           >
+            {/* Forwarded Label */}
+            {message.forwarded && (
+              <div className="flex items-center text-muted-foreground mb-1 text-[11px] italic">
+                <Forward className="w-3 h-3 mr-1" />
+                Forwarded
+              </div>
+            )}
+
             {message.text && (
               <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${message.attachmentUrl ? 'mb-2' : ''} mr-12`}>
                 {message.text}
@@ -154,12 +196,53 @@ const MessageBubble = function MessageBubble({
               </span>
               {isOwnMessage && (
                 <span className="ml-1 flex items-center">
-                  {tickState === 'sent' && <Check className="w-3.5 h-3.5 text-muted-foreground/60" />}
+                  {tickState === 'sent' && <CheckIcon className="w-3.5 h-3.5 text-muted-foreground/60" />}
                   {tickState === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-muted-foreground/60" />}
                   {tickState === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-500" />}
                 </span>
               )}
             </div>
+
+            {/* Hover Menu Button */}
+            {!selectionMode && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(!showMenu);
+                }}
+                className={`absolute top-1 right-1 p-0.5 rounded-full bg-black/5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${showMenu ? 'opacity-100' : ''}`}
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Dropdown Menu */}
+            {showMenu && (
+              <div className="absolute top-6 right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-50 min-w-[120px]">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    onCopy?.(message);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    onForward?.(message);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                >
+                  <Forward className="w-4 h-4" />
+                  Forward
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -172,6 +255,8 @@ export default memo(MessageBubble, (prev, next) => {
          prev.message.readBy.length === next.message.readBy.length &&
          prev.message.deliveredTo?.length === next.message.deliveredTo?.length &&
          prev.isHighlighted === next.isHighlighted &&
+         prev.selectionMode === next.selectionMode &&
+         prev.isSelected === next.isSelected &&
          prev.isFirstInGroup === next.isFirstInGroup &&
          prev.isLastInGroup === next.isLastInGroup &&
          prev.senderProfile?.uid === next.senderProfile?.uid &&
