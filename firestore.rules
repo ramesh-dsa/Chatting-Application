@@ -13,14 +13,39 @@ service cloud.firestore {
     }
 
     match /conversations/{conversationId} {
+      function isParticipant() {
+        return request.auth.uid in resource.data.participants;
+      }
+      function isAdmin() {
+        return !('admins' in resource.data) || request.auth.uid in resource.data.admins;
+      }
+      function isOnlyUpdatingMessages() {
+        let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+        return affectedKeys.hasOnly(['lastMessage', 'lastMessageTimestamp', 'updatedAt']);
+      }
+      function isLeavingGroup() {
+        let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+        return affectedKeys.hasAny(['participants']) &&
+               !(request.auth.uid in request.resource.data.participants);
+      }
+
       // When creating, the current user must be in the new participants array
       allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
       
       // When reading, the current user must be in the existing participants array (or the doc must not exist yet)
       allow read: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
       
-      // When updating, the current user must be in the existing participants array
-      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      // When updating, the user must be a participant, AND
+      // - It's a direct message (no admins), OR
+      // - They are an admin, OR
+      // - They are just updating the lastMessage metadata, OR
+      // - They are leaving the group
+      allow update: if isAuthenticated() && isParticipant() && (
+        resource.data.type == 'direct' ||
+        isAdmin() ||
+        isOnlyUpdatingMessages() ||
+        isLeavingGroup()
+      );
       
       allow delete: if false; // Disallow conversation deletion for now
 

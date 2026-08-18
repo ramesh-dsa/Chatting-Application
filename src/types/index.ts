@@ -13,6 +13,9 @@ export interface Conversation {
   participants: string[]; // Array of UIDs
   groupName?: string;
   groupPhoto?: string;
+  createdBy?: string;
+  createdAt?: number;
+  admins?: string[];
   lastMessage?: string;
   lastMessageTimestamp?: number;
   updatedAt: number;
