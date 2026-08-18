@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -17,9 +17,17 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, UserProfile>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if ('Notification' in window) {
@@ -80,7 +88,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
   };
 
   const filteredConversations = conversations.filter(c => {
-    if (searchQuery.trim() === '') return true;
+    if (debouncedSearchQuery.trim() === '') return true;
     
     let name = '';
     if (c.type === 'group') {
@@ -90,8 +98,43 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
       name = (otherUserId && usersMap[otherUserId]?.displayName) || 'Direct Message';
     }
     
-    return name.toLowerCase().includes(searchQuery.toLowerCase());
+    return name.toLowerCase().includes(debouncedSearchQuery.trim().toLowerCase());
   });
+
+  const existingDirectContactIds = new Set(
+    conversations
+      .filter(c => c.type === 'direct')
+      .flatMap(c => c.participants)
+  );
+
+  const filteredContacts = debouncedSearchQuery.trim() === '' ? [] : Object.values(usersMap).filter(user => {
+    if (user.uid === userProfile?.uid) return false;
+    if (existingDirectContactIds.has(user.uid)) return false;
+    return user.displayName.toLowerCase().includes(debouncedSearchQuery.trim().toLowerCase());
+  });
+
+  const handleStartDirectChat = async (otherUser: UserProfile) => {
+    if (!userProfile) return;
+    try {
+      const directConversationId = [userProfile.uid, otherUser.uid].sort().join('_');
+      const convoRef = doc(db, 'conversations', directConversationId);
+      const convoSnap = await getDoc(convoRef);
+
+      if (!convoSnap.exists()) {
+        await setDoc(convoRef, {
+          type: 'direct',
+          participants: [userProfile.uid, otherUser.uid],
+          updatedAt: Date.now(),
+          lastMessage: '',
+        });
+      }
+      
+      onSelectConversation(directConversationId);
+      setSearchQuery('');
+    } catch (err) {
+      console.error("Error creating direct chat:", err);
+    }
+  };
 
   return (
     <div className="w-full h-full flex flex-col bg-surface">
@@ -156,15 +199,23 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
               </div>
             ))}
           </div>
-        ) : filteredConversations.length === 0 ? (
+        ) : filteredConversations.length === 0 && filteredContacts.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground flex flex-col items-center">
-            <MessageSquare className="w-8 h-8 mb-3 opacity-20" />
-            <p className="text-sm">No conversations yet.</p>
-            <p className="text-xs mt-1">Click the + button to start one.</p>
+            {debouncedSearchQuery ? (
+              <p className="text-sm">No results found.</p>
+            ) : (
+              <>
+                <MessageSquare className="w-8 h-8 mb-3 opacity-20" />
+                <p className="text-sm">No conversations yet.</p>
+                <p className="text-xs mt-1">Click the + button to start one.</p>
+              </>
+            )}
           </div>
         ) : (
-          <ul className="space-y-1 px-2">
-            {filteredConversations.map((convo) => {
+          <div className="px-2 pb-4">
+            {filteredConversations.length > 0 && (
+              <ul className="space-y-1">
+                {filteredConversations.map((convo) => {
               const isActive = convo.id === activeConversationId;
               const isGroup = convo.type === 'group';
               
@@ -224,7 +275,37 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
                 </li>
               );
             })}
-          </ul>
+              </ul>
+            )}
+
+            {filteredContacts.length > 0 && (
+              <div className="mt-4">
+                <div className="px-3 mb-2 text-xs font-semibold text-muted uppercase tracking-wider">Contacts</div>
+                <ul className="space-y-1">
+                  {filteredContacts.map(user => (
+                    <li key={user.uid}>
+                      <button
+                        onClick={() => handleStartDirectChat(user)}
+                        className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-surface-hover text-muted-foreground"
+                      >
+                        <div className="relative flex-shrink-0">
+                          <img src={user.photoURL} alt={user.displayName} className="w-12 h-12 rounded-full object-cover" />
+                        </div>
+                        <div className="ml-4 flex-1 min-w-0 text-left">
+                          <h3 className="text-sm font-medium truncate text-foreground">
+                            {user.displayName}
+                          </h3>
+                          <p className="text-xs truncate text-muted">
+                            {user.statusMessage || 'Available'}
+                          </p>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

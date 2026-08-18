@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore';
-import { MoreVertical, Phone, Video, ArrowLeft } from 'lucide-react';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile } from '../types';
@@ -40,6 +40,13 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
 
+  // Search states
+  const [isSearching, setIsSearching] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<string[]>([]);
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
   // Clear toast after 3 seconds
   useEffect(() => {
     if (toastMessage) {
@@ -47,6 +54,44 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  // Search logic
+  useEffect(() => {
+    if (!isSearching || !chatSearchQuery.trim()) {
+      setSearchResults([]);
+      setCurrentSearchIndex(-1);
+      return;
+    }
+    const queryLower = chatSearchQuery.toLowerCase();
+    const results = messages
+      .filter(m => m.type !== 'system' && m.text.toLowerCase().includes(queryLower))
+      .map(m => m.id);
+    
+    setSearchResults(results);
+    if (results.length > 0) {
+      setCurrentSearchIndex(results.length - 1); // Start at most recent match
+    } else {
+      setCurrentSearchIndex(-1);
+    }
+  }, [chatSearchQuery, messages, isSearching]);
+
+  // Jump to highlighted message
+  useEffect(() => {
+    if (currentSearchIndex >= 0 && searchResults[currentSearchIndex]) {
+      const msgId = searchResults[currentSearchIndex];
+      const el = document.getElementById(`msg-${msgId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedMessageId(msgId);
+        
+        // Remove highlight after a delay
+        const timer = setTimeout(() => {
+          setHighlightedMessageId(prev => prev === msgId ? null : prev);
+        }, 1500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [currentSearchIndex, searchResults]);
 
   // Fetch conversation details and participants
   useEffect(() => {
@@ -161,62 +206,113 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
       <div className="flex-1 flex flex-col w-full h-full bg-chat-bg relative">
         {/* Header */}
         <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10">
-          <div className="flex items-center space-x-3 sm:space-x-4">
-          {onBack && (
-            <button 
-              onClick={onBack}
-              className="md:hidden p-2 -ml-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+          {isSearching ? (
+            <div className="flex-1 flex items-center bg-background rounded-xl px-3 py-1 mr-4 border border-accent/20">
+              <button 
+                onClick={() => {
+                  setIsSearching(false);
+                  setChatSearchQuery('');
+                }} 
+                className="p-1 mr-2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search messages..."
+                value={chatSearchQuery}
+                onChange={e => setChatSearchQuery(e.target.value)}
+                className="flex-1 bg-transparent border-none focus:outline-none text-sm py-1"
+              />
+              <div className="flex items-center space-x-1 ml-2 text-muted-foreground">
+                <span className="text-xs mr-2">
+                  {searchResults.length > 0 ? `${currentSearchIndex + 1} of ${searchResults.length}` : (chatSearchQuery.trim() ? '0 results' : '')}
+                </span>
+                <button 
+                  disabled={searchResults.length === 0 || currentSearchIndex <= 0}
+                  onClick={() => setCurrentSearchIndex(prev => prev - 1)}
+                  className="p-1 hover:bg-surface rounded-md disabled:opacity-30"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+                <button 
+                  disabled={searchResults.length === 0 || currentSearchIndex >= searchResults.length - 1}
+                  onClick={() => setCurrentSearchIndex(prev => prev + 1)}
+                  className="p-1 hover:bg-surface rounded-md disabled:opacity-30"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-3 sm:space-x-4">
+              {onBack && (
+                <button 
+                  onClick={onBack}
+                  className="md:hidden p-2 -ml-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              )}
+              <button 
+                onClick={() => conversation.type === 'group' && setShowGroupInfo(true)}
+                className={`flex items-center space-x-3 text-left ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
+              >
+                <div className="relative">
+                  {chatAvatar ? (
+                    <img src={chatAvatar} alt={chatTitle} className="w-10 h-10 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold">
+                      {chatTitle.charAt(0)}
+                    </div>
+                  )}
+                  {conversation.type === 'direct' && chatStatus === 'Online' && (
+                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
+                  )}
+                </div>
+                <div>
+                  <h2 className="font-semibold text-foreground">{chatTitle}</h2>
+                  <p className="text-xs text-muted-foreground">{chatStatus}</p>
+                </div>
+              </button>
+            </div>
           )}
-          <button 
-            onClick={() => conversation.type === 'group' && setShowGroupInfo(true)}
-            className={`flex items-center space-x-3 text-left ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
-          >
-            <div className="relative">
-              {chatAvatar ? (
-                <img src={chatAvatar} alt={chatTitle} className="w-10 h-10 rounded-full object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold">
-                  {chatTitle.charAt(0)}
+
+          {!isSearching && (
+            <div className="flex items-center space-x-2 relative">
+              <button 
+                onClick={() => setToastMessage("Voice calling isn't available yet")}
+                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
+              >
+                <Phone className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setToastMessage("Video calling isn't available yet")}
+                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
+              >
+                <Video className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setIsSearching(true)}
+                className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+              <button className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors">
+                <MoreVertical className="w-5 h-5" />
+              </button>
+              
+              {/* Simple Toast */}
+              {toastMessage && (
+                <div className="absolute top-full right-0 mt-2 whitespace-nowrap bg-surface border border-border shadow-lg rounded-lg px-4 py-2 text-sm text-foreground animate-in slide-in-from-top-2 fade-in z-50">
+                  {toastMessage}
                 </div>
               )}
-              {conversation.type === 'direct' && chatStatus === 'Online' && (
-                <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
-              )}
-            </div>
-            <div>
-              <h2 className="font-semibold text-foreground">{chatTitle}</h2>
-              <p className="text-xs text-muted-foreground">{chatStatus}</p>
-            </div>
-          </button>
-        </div>
-        <div className="flex items-center space-x-2 relative">
-          <button 
-            onClick={() => setToastMessage("Voice calling isn't available yet")}
-            className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
-          >
-            <Phone className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setToastMessage("Video calling isn't available yet")}
-            className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
-          >
-            <Video className="w-5 h-5" />
-          </button>
-          <button className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors">
-            <MoreVertical className="w-5 h-5" />
-          </button>
-          
-          {/* Simple Toast */}
-          {toastMessage && (
-            <div className="absolute top-full right-0 mt-2 whitespace-nowrap bg-surface border border-border shadow-lg rounded-lg px-4 py-2 text-sm text-foreground animate-in slide-in-from-top-2 fade-in z-50">
-              {toastMessage}
             </div>
           )}
         </div>
-      </div>
+
 
       {/* Message List */}
       <div className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative">
@@ -275,6 +371,7 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
                 isFirstInGroup={isFirstInGroup}
                 isLastInGroup={isLastInGroup}
                 isGroupChat={conversation.type === 'group'}
+                isHighlighted={highlightedMessageId === msg.id}
               />
             </React.Fragment>
           );

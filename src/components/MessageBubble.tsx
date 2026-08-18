@@ -8,6 +8,7 @@ interface MessageBubbleProps {
   isFirstInGroup: boolean;
   isLastInGroup: boolean;
   isGroupChat: boolean;
+  isHighlighted?: boolean;
 }
 
 export default function MessageBubble({ 
@@ -16,7 +17,8 @@ export default function MessageBubble({
   senderProfile, 
   isFirstInGroup,
   isLastInGroup,
-  isGroupChat
+  isGroupChat,
+  isHighlighted
 }: MessageBubbleProps) {
   
   if (message.type === 'system') {
@@ -71,10 +73,13 @@ export default function MessageBubble({
           )}
           
           <div 
-            className={`px-3 pt-2 pb-1.5 relative group shadow-sm ${radiusClass} ${
-              isOwnMessage 
-                ? 'bg-[#d9fdd3] text-[#111b21]' 
-                : 'bg-surface border border-border text-foreground'
+            id={`msg-${message.id}`}
+            className={`px-3 pt-2 pb-1.5 relative group shadow-sm transition-colors duration-500 ${radiusClass} ${
+              isHighlighted 
+                ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
+                : isOwnMessage 
+                  ? 'bg-[#d9fdd3] text-[#111b21]' 
+                  : 'bg-surface border border-border text-foreground'
             }`}
           >
             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mr-12">{message.text}</p>
