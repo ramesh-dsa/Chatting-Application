@@ -142,7 +142,7 @@ export default function MessageBubble({
             {/* Floating Timestamp inside the bubble */}
             <div className="absolute bottom-1 right-2 flex items-center space-x-1">
               <span className="text-[10px] text-muted opacity-80 mt-1">
-                {format(message.timestamp, 'HH:mm')}
+                {format(message.timestamp, 'h:mm a')}
               </span>
               {isOwnMessage && (
                 <span className="ml-1 flex items-center">

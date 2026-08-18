@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref } from 'firebase/storage';
 import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -225,42 +225,57 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
 
       if (file) {
         setUploadProgress(0);
-        const fileExtension = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
-        const storageRef = ref(storage, `attachments/${conversationId}/${fileName}`);
         
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+        const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+        
+        if (!cloudName || !uploadPreset) {
+          throw new Error("Cloudinary configuration missing in .env.local");
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', uploadPreset);
+        
+        // Use raw upload for documents, auto for images/videos
+        const resourceType = file.type.startsWith('image/') || file.type.startsWith('video/') ? 'auto' : 'raw';
+        const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
 
         await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', uploadUrl, true);
+          
           let timeoutId = setTimeout(() => {
-            if (uploadTask.snapshot.state === 'running' && uploadTask.snapshot.bytesTransferred === 0) {
-              uploadTask.cancel();
-              reject(new Error("Upload timed out. Firebase Storage might not be enabled in your console, or rules are blocking it."));
+            if (xhr.readyState !== 4) {
+              xhr.abort();
+              reject(new Error("Upload timed out."));
             }
-          }, 15000); // 15s timeout
-
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              if (progress > 0) clearTimeout(timeoutId);
+          }, 60000); // 60s timeout for file upload
+          
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const progress = (e.loaded / e.total) * 100;
               setUploadProgress(progress);
-            },
-            (error) => {
-              clearTimeout(timeoutId);
-              console.error("Upload failed:", error);
-              reject(error);
-            },
-            async () => {
-              clearTimeout(timeoutId);
-              try {
-                attachmentUrl = await getDownloadURL(uploadTask.snapshot.ref);
-                resolve();
-              } catch (err) {
-                reject(err);
-              }
             }
-          );
+          };
+
+          xhr.onload = () => {
+            clearTimeout(timeoutId);
+            if (xhr.status === 200) {
+              const response = JSON.parse(xhr.responseText);
+              attachmentUrl = response.secure_url;
+              resolve();
+            } else {
+              reject(new Error("Cloudinary upload failed: " + xhr.responseText));
+            }
+          };
+
+          xhr.onerror = () => {
+            clearTimeout(timeoutId);
+            reject(new Error("Network error during Cloudinary upload"));
+          };
+
+          xhr.send(formData);
         });
 
         if (file.type.startsWith('image/')) attachmentType = 'image';

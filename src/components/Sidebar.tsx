@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
+import { signOut } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile, Message } from '../types';
-import { formatDistanceToNow } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import NewChatModal from './NewChatModal';
+
+function formatSidebarTime(timestamp: number) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (isToday(date)) return format(date, 'h:mm a');
+  if (isYesterday(date)) return 'Yesterday';
+  return format(date, 'dd/MM/yyyy');
+}
 
 interface SidebarProps {
   activeConversationId: string | null;
@@ -325,7 +334,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
                               </h3>
                               {convo.updatedAt && (
                                 <span className={`text-xs ${unreadCount > 0 ? 'text-accent font-medium' : 'text-muted'}`}>
-                                  {formatDistanceToNow(convo.updatedAt, { addSuffix: true })}
+                                  {formatSidebarTime(convo.updatedAt)}
                                 </span>
                               )}
                             </div>
@@ -412,7 +421,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
                               </h3>
                               {message.timestamp && (
                                 <span className="text-xs text-muted">
-                                  {formatDistanceToNow(message.timestamp, { addSuffix: true })}
+                                  {formatSidebarTime(message.timestamp)}
                                 </span>
                               )}
                             </div>
