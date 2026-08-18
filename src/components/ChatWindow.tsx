@@ -404,6 +404,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
                   isFirstInGroup={false}
                   isLastInGroup={false}
                   isGroupChat={conversation.type === 'group'}
+                  participantCount={conversation.participants.length}
                 />
               </React.Fragment>
             );
@@ -441,6 +442,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
                 isLastInGroup={isLastInGroup}
                 isGroupChat={conversation.type === 'group'}
                 isHighlighted={highlightedMessageId === msg.id}
+                participantCount={conversation.participants.length}
               />
             </React.Fragment>
           );

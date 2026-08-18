@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import { Check, CheckCheck } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 
 interface MessageBubbleProps {
@@ -9,6 +10,7 @@ interface MessageBubbleProps {
   isLastInGroup: boolean;
   isGroupChat: boolean;
   isHighlighted?: boolean;
+  participantCount?: number;
 }
 
 export default function MessageBubble({ 
@@ -18,7 +20,8 @@ export default function MessageBubble({
   isFirstInGroup,
   isLastInGroup,
   isGroupChat,
-  isHighlighted
+  isHighlighted,
+  participantCount = 2
 }: MessageBubbleProps) {
   
   if (message.type === 'system') {
@@ -46,6 +49,21 @@ export default function MessageBubble({
   }
 
   const marginBottom = isLastInGroup ? 'mb-4' : 'mb-[2px]';
+
+  // Calculate message status ticks for own messages
+  let tickState = 'sent'; // 'sent' | 'delivered' | 'read'
+  if (isOwnMessage) {
+    const otherParticipantCount = participantCount - 1;
+    // msg.readBy includes the sender
+    const readCount = message.readBy ? message.readBy.length - 1 : 0;
+    const deliveredCount = message.deliveredTo ? message.deliveredTo.length : 0;
+
+    if (readCount >= otherParticipantCount && otherParticipantCount > 0) {
+      tickState = 'read';
+    } else if (deliveredCount >= otherParticipantCount && otherParticipantCount > 0) {
+      tickState = 'delivered';
+    }
+  }
 
   return (
     <div className={`flex w-full ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
@@ -103,7 +121,11 @@ export default function MessageBubble({
                 {format(message.timestamp, 'HH:mm')}
               </span>
               {isOwnMessage && (
-                <span className="text-[10px] text-emerald-600 font-medium">✓✓</span>
+                <span className="ml-1 flex items-center">
+                  {tickState === 'sent' && <Check className="w-3.5 h-3.5 text-muted-foreground/60" />}
+                  {tickState === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-muted-foreground/60" />}
+                  {tickState === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-500" />}
+                </span>
               )}
             </div>
           </div>
