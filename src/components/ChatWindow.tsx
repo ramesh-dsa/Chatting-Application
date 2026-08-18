@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile } from '../types';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
+import GroupInfoPanel from './GroupInfoPanel';
 import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
 
 function getDateSeparatorLabel(date: Date): string {
@@ -37,6 +38,7 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
   const [participants, setParticipants] = useState<Record<string, UserProfile>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
 
   // Clear toast after 3 seconds
   useEffect(() => {
@@ -155,10 +157,11 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
   }
 
   return (
-    <div className="flex-1 flex flex-col w-full h-full bg-chat-bg relative">
-      {/* Header */}
-      <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10">
-        <div className="flex items-center space-x-3 sm:space-x-4">
+    <div className="flex-1 flex w-full h-full relative overflow-hidden">
+      <div className="flex-1 flex flex-col w-full h-full bg-chat-bg relative">
+        {/* Header */}
+        <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10">
+          <div className="flex items-center space-x-3 sm:space-x-4">
           {onBack && (
             <button 
               onClick={onBack}
@@ -167,22 +170,27 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
               <ArrowLeft className="w-5 h-5" />
             </button>
           )}
-          <div className="relative">
-            {chatAvatar ? (
-              <img src={chatAvatar} alt={chatTitle} className="w-10 h-10 rounded-full object-cover" />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold">
-                {chatTitle.charAt(0)}
-              </div>
-            )}
-            {conversation.type === 'direct' && chatStatus === 'Online' && (
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
-            )}
-          </div>
-          <div>
-            <h2 className="font-semibold text-foreground">{chatTitle}</h2>
-            <p className="text-xs text-muted-foreground">{chatStatus}</p>
-          </div>
+          <button 
+            onClick={() => conversation.type === 'group' && setShowGroupInfo(true)}
+            className={`flex items-center space-x-3 text-left ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
+          >
+            <div className="relative">
+              {chatAvatar ? (
+                <img src={chatAvatar} alt={chatTitle} className="w-10 h-10 rounded-full object-cover" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold">
+                  {chatTitle.charAt(0)}
+                </div>
+              )}
+              {conversation.type === 'direct' && chatStatus === 'Online' && (
+                <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
+              )}
+            </div>
+            <div>
+              <h2 className="font-semibold text-foreground">{chatTitle}</h2>
+              <p className="text-xs text-muted-foreground">{chatStatus}</p>
+            </div>
+          </button>
         </div>
         <div className="flex items-center space-x-2 relative">
           <button 
@@ -276,6 +284,20 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
 
       {/* Input Area */}
       <MessageInput onSendMessage={handleSendMessage} />
+    </div>
+
+    {/* Group Info Panel */}
+    {showGroupInfo && conversation.type === 'group' && (
+      <GroupInfoPanel 
+        conversation={conversation}
+        participants={participants}
+        onClose={() => setShowGroupInfo(false)}
+        onLeave={() => {
+          setShowGroupInfo(false);
+          if (onBack) onBack();
+        }}
+      />
+    )}
     </div>
   );
 }
