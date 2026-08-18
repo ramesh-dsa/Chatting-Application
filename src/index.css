@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #f0f2f5;
+  --color-foreground: #111b21;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f5f6f6;
+  --color-accent: #00a884;
+  --color-accent-hover: #008f6f;
+  --color-accent-foreground: #ffffff;
+  --color-border: #e9edef;
+  --color-muted: #667781;
+  --color-chat-bg: #efeae2;
+  --color-bubble-sent: #d9fdd3;
+  --color-bubble-received: #ffffff;
+  
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  *, ::before, ::after {
+    border-color: var(--color-border);
+  }
+  
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar for modern messenger feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(17, 27, 33, 0.2);
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(17, 27, 33, 0.3);
+  }
+}
