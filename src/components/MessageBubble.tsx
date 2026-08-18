@@ -1,3 +1,4 @@
+import React, { memo } from 'react';
 import { format } from 'date-fns';
 import { Check, CheckCheck, FileText, Download } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
@@ -11,10 +12,10 @@ interface MessageBubbleProps {
   isGroupChat: boolean;
   isHighlighted?: boolean;
   participantCount?: number;
-  onImageClick?: (url: string, name: string) => void;
+  onImageClick?: (message: Message) => void;
 }
 
-export default function MessageBubble({ 
+const MessageBubble = function MessageBubble({ 
   message, 
   isOwnMessage, 
   senderProfile, 
@@ -116,7 +117,7 @@ export default function MessageBubble({
                     src={message.attachmentUrl} 
                     alt="attachment" 
                     className="rounded-lg max-w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-90 transition-opacity" 
-                    onClick={() => onImageClick?.(message.attachmentUrl!, message.attachmentName || 'Image')}
+                    onClick={() => onImageClick?.(message)}
                   />
                 ) : message.attachmentType === 'video' ? (
                   <video src={message.attachmentUrl} controls className="rounded-lg max-w-full h-auto max-h-64 object-cover" />
@@ -164,4 +165,16 @@ export default function MessageBubble({
       </div>
     </div>
   );
-}
+};
+
+export default memo(MessageBubble, (prev, next) => {
+  return prev.message.id === next.message.id &&
+         prev.message.readBy.length === next.message.readBy.length &&
+         prev.message.deliveredTo?.length === next.message.deliveredTo?.length &&
+         prev.isHighlighted === next.isHighlighted &&
+         prev.isFirstInGroup === next.isFirstInGroup &&
+         prev.isLastInGroup === next.isLastInGroup &&
+         prev.senderProfile?.uid === next.senderProfile?.uid &&
+         prev.senderProfile?.photoURL === next.senderProfile?.photoURL &&
+         prev.senderProfile?.displayName === next.senderProfile?.displayName;
+});

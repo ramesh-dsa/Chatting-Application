@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Send, Smile, Plus, Image as ImageIcon, FileText, X } from 'lucide-react';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
+
+const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
 interface MessageInputProps {
   onSendMessage: (text: string, file?: File | null) => Promise<void>;
@@ -230,13 +231,15 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
           <div className="relative" ref={containerRef}>
             {showPicker && (
               <div className="absolute bottom-[calc(100%+12px)] left-0 z-50 shadow-xl rounded-xl overflow-hidden border border-border">
-                <EmojiPicker 
-                  onEmojiClick={handleEmojiClick}
-                  theme={Theme.LIGHT}
-                  height={350}
-                  width={320}
-                  previewConfig={{ showPreview: false }}
-                />
+                <Suspense fallback={<div className="w-[320px] h-[350px] flex items-center justify-center bg-white text-muted-foreground text-sm">Loading emojis...</div>}>
+                  <EmojiPicker 
+                    onEmojiClick={handleEmojiClick}
+                    theme={'light' as any}
+                    height={350}
+                    width={320}
+                    previewConfig={{ showPreview: false }}
+                  />
+                </Suspense>
               </div>
             )}
             <button 

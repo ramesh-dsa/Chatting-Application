@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
 import { signOut } from 'firebase/auth';
@@ -18,13 +18,14 @@ function formatSidebarTime(timestamp: number) {
 
 interface SidebarProps {
   activeConversationId: string | null;
-  onSelectConversation: (id: string, messageId?: string) => void;
+  onSelectConversation: (id: string, searchMessageId?: string) => void;
+  usersMap: Record<string, UserProfile>;
+  isUsersLoaded: boolean;
 }
 
-export default function Sidebar({ activeConversationId, onSelectConversation }: SidebarProps) {
-  const { userProfile } = useAuth();
+export default function Sidebar({ activeConversationId, onSelectConversation, usersMap, isUsersLoaded }: SidebarProps) {
+  const { userProfile, currentUser } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [usersMap, setUsersMap] = useState<Record<string, UserProfile>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
@@ -46,24 +47,25 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
       });
     }
 
-    // Subscribe to all users to display names/avatars for direct chats
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const map: Record<string, UserProfile> = {};
-      snapshot.forEach(doc => {
-        map[doc.id] = doc.data() as UserProfile;
-      });
-      setUsersMap(map);
-    });
 
-    return () => unsubscribeUsers();
   }, []);
 
+  const activeConversationIdRef = useRef(activeConversationId);
   useEffect(() => {
-    if (!userProfile?.uid) return;
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  const hasNotificationPermissionRef = useRef(hasNotificationPermission);
+  useEffect(() => {
+    hasNotificationPermissionRef.current = hasNotificationPermission;
+  }, [hasNotificationPermission]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
 
     const q = query(
       collection(db, 'conversations'),
-      where('participants', 'array-contains', userProfile.uid),
+      where('participants', 'array-contains', currentUser.uid),
       orderBy('updatedAt', 'desc')
     );
 
@@ -78,9 +80,9 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'modified') {
           const convo = change.doc.data() as Conversation;
-          const isCurrentlyActive = activeConversationId === change.doc.id && document.hasFocus();
+          const isCurrentlyActive = activeConversationIdRef.current === change.doc.id && document.hasFocus();
           
-          if (!isCurrentlyActive && hasNotificationPermission) {
+          if (!isCurrentlyActive && hasNotificationPermissionRef.current) {
             new Notification('New Message', {
               body: convo.lastMessage || 'You received a new message',
               icon: '/vite.svg'
@@ -91,12 +93,12 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
     });
 
     return () => unsubscribe();
-  }, [userProfile, activeConversationId, hasNotificationPermission]);
+  }, [currentUser?.uid]);
 
   // Keep a local cache of the last 50 messages for each conversation to support client-side search
   // and handle message delivery receipts (double gray ticks)
   useEffect(() => {
-    if (!userProfile?.uid) return;
+    if (!currentUser?.uid) return;
     
     import('firebase/firestore').then(({ limit, writeBatch, doc }) => {
       const unsubscribes = conversations.map(convo => {
@@ -112,8 +114,8 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
           // Process delivery receipts: mark undelivered messages from others as delivered
           const undeliveredMsgs = msgs.filter(m => 
             m.type !== 'system' && 
-            m.senderId !== userProfile.uid && 
-            !m.deliveredTo?.includes(userProfile.uid)
+            m.senderId !== currentUser.uid && 
+            !m.deliveredTo?.includes(currentUser.uid)
           );
 
           if (undeliveredMsgs.length > 0) {
@@ -121,7 +123,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
             undeliveredMsgs.forEach(m => {
               const msgRef = doc(db, `conversations/${convo.id}/messages`, m.id);
               batch.update(msgRef, {
-                deliveredTo: [...(m.deliveredTo || []), userProfile.uid]
+                deliveredTo: [...(m.deliveredTo || []), currentUser.uid]
               });
             });
             batch.commit().catch(console.error);
@@ -130,7 +132,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
       });
       return () => unsubscribes.forEach(unsub => unsub());
     });
-  }, [conversations.map(c => c.id).join(',')]);
+  }, [conversations.map(c => c.id).join(','), currentUser?.uid]);
 
   const handleLogout = () => {
     auth.signOut();
@@ -143,7 +145,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
     if (c.type === 'group') {
       name = c.groupName || '';
     } else {
-      const otherUserId = c.participants.find(id => id !== userProfile?.uid);
+      const otherUserId = c.participants.find(id => id !== currentUser?.uid);
       name = (otherUserId && usersMap[otherUserId]?.displayName) || 'Direct Message';
     }
     
@@ -157,22 +159,33 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
   );
 
   const filteredContacts = debouncedSearchQuery.trim() === '' ? [] : Object.values(usersMap).filter(user => {
-    if (user.uid === userProfile?.uid) return false;
+    if (user.uid === currentUser?.uid) return false;
     if (existingDirectContactIds.has(user.uid)) return false;
     return user.displayName.toLowerCase().includes(debouncedSearchQuery.trim().toLowerCase());
   });
 
   const handleStartDirectChat = async (otherUser: UserProfile) => {
-    if (!userProfile) return;
+    if (!currentUser?.uid) return;
+    
+    const existingConvo = conversations.find(c => 
+      c.type === 'direct' && c.participants.includes(otherUser.uid)
+    );
+
+    if (existingConvo) {
+      onSelectConversation(existingConvo.id);
+      setSearchQuery('');
+      return;
+    }
+
     try {
-      const directConversationId = [userProfile.uid, otherUser.uid].sort().join('_');
+      const directConversationId = [currentUser.uid, otherUser.uid].sort().join('_');
       const convoRef = doc(db, 'conversations', directConversationId);
       const convoSnap = await getDoc(convoRef);
 
       if (!convoSnap.exists()) {
         await setDoc(convoRef, {
           type: 'direct',
-          participants: [userProfile.uid, otherUser.uid],
+          participants: [currentUser.uid, otherUser.uid],
           updatedAt: Date.now(),
           lastMessage: '',
         });
@@ -208,7 +221,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
     if (isGroup) {
       displayName = convo.groupName || 'Group';
     } else {
-      const otherUserId = convo.participants.find(id => id !== userProfile?.uid);
+      const otherUserId = convo.participants.find(id => id !== currentUser?.uid);
       if (otherUserId && usersMap[otherUserId]) {
         displayName = usersMap[otherUserId].displayName;
         photoURL = usersMap[otherUserId].photoURL;
@@ -223,11 +236,18 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="relative">
-            <img 
-              src={userProfile?.photoURL} 
-              alt="Profile" 
-              className="w-10 h-10 rounded-full object-cover border border-border"
-            />
+            {userProfile?.photoURL ? (
+              <img 
+                src={userProfile.photoURL} 
+                alt="Profile" 
+                className="w-10 h-10 rounded-full object-cover border border-border"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${userProfile?.displayName || 'U'}`;
+                }}
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-border animate-pulse border border-border"></div>
+            )}
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
           </div>
           <h1 className="font-semibold text-foreground truncate w-32">{userProfile?.displayName}</h1>
@@ -268,14 +288,14 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
 
       {/* Conversation List */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        {isLoading ? (
+        {isLoading || !isUsersLoaded ? (
           <div className="p-4 space-y-4">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="flex items-center space-x-3 animate-pulse">
-                <div className="w-12 h-12 bg-surface rounded-full flex-shrink-0"></div>
+                <div className="w-12 h-12 bg-border rounded-full flex-shrink-0"></div>
                 <div className="flex-1">
-                  <div className="h-4 bg-surface rounded w-1/2 mb-2"></div>
-                  <div className="h-3 bg-surface rounded w-3/4"></div>
+                  <div className="h-4 bg-border rounded w-1/2 mb-2"></div>
+                  <div className="h-3 bg-border rounded w-3/4"></div>
                 </div>
               </div>
             ))}

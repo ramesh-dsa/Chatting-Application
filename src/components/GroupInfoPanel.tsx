@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Camera, Edit2, UserPlus, LogOut, Check } from 'lucide-react';
+import { X, Camera, Edit2, UserPlus, LogOut, Check, Shield, ShieldOff } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
 import { doc, updateDoc, arrayRemove, arrayUnion, collection, getDocs, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -9,12 +9,12 @@ import { format } from 'date-fns';
 
 interface GroupInfoPanelProps {
   conversation: Conversation;
-  participants: Record<string, UserProfile>;
+  usersMap: Record<string, UserProfile>;
   onClose: () => void;
   onLeave: () => void;
 }
 
-export default function GroupInfoPanel({ conversation, participants, onClose, onLeave }: GroupInfoPanelProps) {
+export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeave }: GroupInfoPanelProps) {
   const { userProfile } = useAuth();
   const [isEditingName, setIsEditingName] = useState(false);
   const [newName, setNewName] = useState(conversation.groupName || '');
@@ -23,7 +23,7 @@ export default function GroupInfoPanel({ conversation, participants, onClose, on
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const isAdmin = userProfile ? conversation.admins?.includes(userProfile.uid) : false;
-  const creator = conversation.createdBy ? participants[conversation.createdBy] : null;
+  const creator = conversation.createdBy ? usersMap[conversation.createdBy] : null;
 
   useEffect(() => {
     if (showAddMember) {
@@ -101,6 +101,40 @@ export default function GroupInfoPanel({ conversation, participants, onClose, on
 
     await updateDoc(doc(db, 'conversations', conversation.id), updates);
     await handleSystemMessage(`${userProfile?.displayName} removed ${name}`);
+  };
+
+  const handleMakeAdmin = async (uid: string) => {
+    if (!isAdmin) return;
+    try {
+      const name = usersMap[uid]?.displayName || 'A member';
+      await updateDoc(doc(db, 'conversations', conversation.id), {
+        admins: arrayUnion(uid)
+      });
+      await handleSystemMessage(`${userProfile?.displayName} made ${name} an admin`);
+    } catch (error) {
+      console.error('Error making admin:', error);
+      alert('Failed to make user admin. Please try again.');
+    }
+  };
+
+  const handleRemoveAdmin = async (uid: string) => {
+    if (!isAdmin) return;
+    
+    if (conversation.admins && conversation.admins.length <= 1) {
+      alert("A group must have at least one admin.");
+      return;
+    }
+
+    try {
+      const name = usersMap[uid]?.displayName || 'A member';
+      await updateDoc(doc(db, 'conversations', conversation.id), {
+        admins: arrayRemove(uid)
+      });
+      await handleSystemMessage(`${userProfile?.displayName} removed ${name} as admin`);
+    } catch (error) {
+      console.error('Error removing admin:', error);
+      alert('Failed to remove admin. Please try again.');
+    }
   };
 
   const handleAddMember = async (uid: string, name: string) => {
@@ -263,7 +297,7 @@ export default function GroupInfoPanel({ conversation, participants, onClose, on
 
         <div className="flex flex-col">
           {conversation.participants.map(uid => {
-            const participant = participants[uid];
+            const participant = usersMap[uid];
             if (!participant) return null;
             const isParticipantAdmin = conversation.admins?.includes(uid);
             const isMe = userProfile?.uid === uid;
@@ -283,14 +317,36 @@ export default function GroupInfoPanel({ conversation, participants, onClose, on
                   {isParticipantAdmin && (
                     <span className="text-[10px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">Admin</span>
                   )}
-                  {isAdmin && !isMe && (
-                    <button 
-                      onClick={() => handleRemoveMember(uid, participant.displayName)}
-                      className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-50 p-1.5 rounded-md transition-all"
-                      title="Remove member"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                  {isAdmin && (
+                    <div className="flex items-center space-x-1">
+                      {isParticipantAdmin ? (
+                        <button 
+                          onClick={() => handleRemoveAdmin(uid)}
+                          className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-accent hover:bg-surface-hover p-1.5 rounded-md transition-all"
+                          title="Remove as admin"
+                        >
+                          <ShieldOff className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => handleMakeAdmin(uid)}
+                          className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-accent hover:bg-surface-hover p-1.5 rounded-md transition-all"
+                          title="Make admin"
+                        >
+                          <Shield className="w-4 h-4" />
+                        </button>
+                      )}
+                      
+                      {!isMe && (
+                        <button 
+                          onClick={() => handleRemoveMember(uid, participant.displayName)}
+                          className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-50 p-1.5 rounded-md transition-all"
+                          title="Remove member"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch } from 'firebase/firestore';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch, limit } from 'firebase/firestore';
 import { ref } from 'firebase/storage';
 import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
@@ -18,7 +18,7 @@ function getDateSeparatorLabel(date: Date): string {
   return format(date, 'd MMMM yyyy'); // e.g. "16 August 2025"
 }
 
-function DateSeparator({ label }: { label: string }) {
+const DateSeparator = React.memo(function DateSeparator({ label }: { label: string }) {
   return (
     <div className="flex justify-center my-4 sticky top-2 z-10">
       <span className="bg-surface shadow-sm text-muted-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border">
@@ -26,24 +26,27 @@ function DateSeparator({ label }: { label: string }) {
       </span>
     </div>
   );
-}
+});
 
 interface ChatWindowProps {
   conversationId: string;
   onBack?: () => void;
   initialHighlightId?: string | null;
+  usersMap: Record<string, UserProfile>;
 }
 
-export default function ChatWindow({ conversationId, onBack, initialHighlightId }: ChatWindowProps) {
-  const { userProfile } = useAuth();
+export default function ChatWindow({ conversationId, onBack, initialHighlightId, usersMap }: ChatWindowProps) {
+  const { currentUser } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [participants, setParticipants] = useState<Record<string, UserProfile>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; senderName: string; timestamp: number; name: string } | null>(null);
+  const [messageLimit, setMessageLimit] = useState(50);
+  const [isFetchingOlder, setIsFetchingOlder] = useState(false);
 
   // Search states
   const [isSearching, setIsSearching] = useState(false);
@@ -125,7 +128,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
     }
   }, [initialHighlightId, messages.length]);
 
-  // Fetch conversation details and participants
+  // Fetch conversation details
   useEffect(() => {
     if (!conversationId) return;
 
@@ -133,18 +136,6 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
       if (snapshot.exists()) {
         const convoData = snapshot.data() as Omit<Conversation, 'id'>;
         setConversation({ ...convoData, id: snapshot.id } as Conversation);
-
-        // Fetch participant profiles (in a real app, you might want to cache this or use a cloud function)
-        const participantProfiles: Record<string, UserProfile> = {};
-        for (const uid of convoData.participants) {
-          if (!participants[uid]) {
-            const userSnap = await getDoc(doc(db, 'users', uid));
-            if (userSnap.exists()) {
-              participantProfiles[uid] = userSnap.data() as UserProfile;
-            }
-          }
-        }
-        setParticipants(prev => ({ ...prev, ...participantProfiles }));
       }
     });
 
@@ -157,7 +148,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
 
     const q = query(
       collection(db, `conversations/${conversationId}/messages`),
-      orderBy('timestamp', 'asc')
+      orderBy('timestamp', 'desc'),
+      limit(messageLimit)
     );
 
     const unsubMessages = onSnapshot(q, (snapshot) => {
@@ -165,23 +157,29 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
       snapshot.forEach((d) => {
         msgs.push({ id: d.id, ...d.data() } as Message);
       });
-      setMessages(msgs);
       
-      // Auto-scroll
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+      const reversedMsgs = msgs.reverse();
+      setMessages(reversedMsgs);
+      
+      // Auto-scroll if not fetching older messages
+      if (!isFetchingOlder) {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        }, 100);
+      } else {
+        setIsFetchingOlder(false);
+      }
 
       // Handle Read Receipts (Mark all unread messages from others as read & delivered)
-      if (userProfile && msgs.length > 0) {
-        const unreadMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== userProfile.uid && !m.readBy.includes(userProfile.uid));
+      if (currentUser && msgs.length > 0) {
+        const unreadMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.readBy.includes(currentUser.uid));
         
         if (unreadMsgs.length > 0) {
           const batch = writeBatch(db);
           unreadMsgs.forEach(m => {
             const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
-            const updatedReadBy = m.readBy.includes(userProfile.uid) ? m.readBy : [...m.readBy, userProfile.uid];
-            const updatedDeliveredTo = m.deliveredTo?.includes(userProfile.uid) ? m.deliveredTo : [...(m.deliveredTo || []), userProfile.uid];
+            const updatedReadBy = m.readBy.includes(currentUser.uid) ? m.readBy : [...m.readBy, currentUser.uid];
+            const updatedDeliveredTo = m.deliveredTo?.includes(currentUser.uid) ? m.deliveredTo : [...(m.deliveredTo || []), currentUser.uid];
             
             batch.update(msgRef, {
               readBy: updatedReadBy,
@@ -192,19 +190,19 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
           // Also reset unread count for current user
           const convoRef = doc(db, 'conversations', conversationId);
           batch.update(convoRef, {
-            [`unreadCounts.${userProfile.uid}`]: 0
+            [`unreadCounts.${currentUser.uid}`]: 0
           });
           
           batch.commit().catch(console.error);
         } else {
           // Check if any messages are just undelivered and mark them delivered
-          const undeliveredMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== userProfile.uid && !m.deliveredTo?.includes(userProfile.uid));
+          const undeliveredMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.deliveredTo?.includes(currentUser.uid));
           if (undeliveredMsgs.length > 0) {
             const batch = writeBatch(db);
             undeliveredMsgs.forEach(m => {
               const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
               batch.update(msgRef, {
-                deliveredTo: [...(m.deliveredTo || []), userProfile.uid]
+                deliveredTo: [...(m.deliveredTo || []), currentUser.uid]
               });
             });
             batch.commit().catch(console.error);
@@ -214,10 +212,27 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
     });
 
     return () => unsubMessages();
-  }, [conversationId, userProfile]);
+  }, [conversationId, messageLimit, currentUser?.uid]);
+
+  const handleImageClick = useCallback((msg: Message) => {
+    const isOwn = msg.senderId === currentUser?.uid;
+    setPreviewImage({ 
+      url: msg.attachmentUrl || '', 
+      senderName: isOwn ? 'You' : usersMap[msg.senderId]?.displayName || 'User', 
+      timestamp: msg.timestamp,
+      name: msg.attachmentName || ''
+    });
+  }, [currentUser?.uid, usersMap]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop === 0 && messages.length >= messageLimit) {
+      setIsFetchingOlder(true);
+      setMessageLimit(prev => prev + 50);
+    }
+  };
 
   const handleSendMessage = async (text: string, file?: File | null) => {
-    if (!userProfile || !conversationId) return;
+    if (!currentUser || !conversationId) return;
 
     try {
       let attachmentUrl = '';
@@ -290,10 +305,10 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
       }
 
       const msgData: any = {
-        senderId: userProfile.uid,
+        senderId: currentUser.uid,
         text: text.trim(),
         timestamp: Date.now(),
-        readBy: [userProfile.uid],
+        readBy: [currentUser.uid],
         type: attachmentType ? attachmentType : 'text'
       };
 
@@ -310,7 +325,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
       const unreadUpdates: Record<string, any> = {};
       if (conversation?.participants) {
         conversation.participants.forEach(uid => {
-          if (uid !== userProfile.uid) {
+          if (uid !== currentUser.uid) {
             unreadUpdates[`unreadCounts.${uid}`] = increment(1);
           }
         });
@@ -345,8 +360,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
   let chatAvatar = conversation.groupPhoto || '';
 
   if (conversation.type === 'direct') {
-    const otherUid = conversation.participants.find(uid => uid !== userProfile?.uid);
-    const otherUser = otherUid ? participants[otherUid] : null;
+    const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
+    const otherUser = otherUid ? usersMap[otherUid] : null;
     chatTitle = otherUser?.displayName || 'User';
     chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.lastSeen ? 'Offline' : '');
     chatAvatar = otherUser?.photoURL || 'https://api.dicebear.com/7.x/initials/svg?seed=U';
@@ -466,7 +481,11 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
 
 
       {/* Message List */}
-      <div className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative"
+      >
         {messages.map((msg, index) => {
           const currentDate = new Date(msg.timestamp);
           const previousDate = index > 0 ? new Date(messages[index - 1].timestamp) : null;
@@ -492,7 +511,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
             );
           }
 
-          const isOwn = msg.senderId === userProfile?.uid;
+          const isOwn = msg.senderId === currentUser?.uid;
           
           let prevMsg;
           for (let i = index - 1; i >= 0; i--) {
@@ -519,18 +538,13 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
               <MessageBubble 
                 message={msg} 
                 isOwnMessage={isOwn} 
-                senderProfile={participants[msg.senderId]}
+                senderProfile={isOwn ? undefined : usersMap[msg.senderId]}
                 isFirstInGroup={isFirstInGroup}
                 isLastInGroup={isLastInGroup}
                 isGroupChat={conversation.type === 'group'}
                 isHighlighted={highlightedMessageId === msg.id}
                 participantCount={conversation.participants.length}
-                onImageClick={(url, name) => setPreviewImage({ 
-                  url, 
-                  senderName: isOwn ? 'You' : participants[msg.senderId]?.displayName || 'User', 
-                  timestamp: msg.timestamp,
-                  name
-                })}
+                onImageClick={handleImageClick}
               />
             </React.Fragment>
           );
@@ -546,7 +560,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
     {showGroupInfo && conversation.type === 'group' && (
       <GroupInfoPanel 
         conversation={conversation}
-        participants={participants}
+        usersMap={usersMap}
         onClose={() => setShowGroupInfo(false)}
         onLeave={() => {
           setShowGroupInfo(false);

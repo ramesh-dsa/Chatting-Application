@@ -26,41 +26,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
+      setLoading(false); // Unblock app immediately
       
       if (user) {
         const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
         
-        let profileData: UserProfile;
-        
-        if (userSnap.exists()) {
-          profileData = userSnap.data() as UserProfile;
-          // Update online status
-          await updateDoc(userRef, {
-            isOnline: true,
-            lastSeen: Date.now()
-          });
-          profileData.isOnline = true;
-        } else {
-          // Create basic profile on first login
-          profileData = {
-            uid: user.uid,
-            displayName: user.displayName || 'New User',
-            photoURL: user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'U'}`,
-            statusMessage: "Hey there! I am using Firebase Chat.",
-            isOnline: true,
-            lastSeen: Date.now()
-          };
-          await setDoc(userRef, profileData);
-        }
-        setUserProfile(profileData);
+        // Fetch profile and update presence in background
+        getDoc(userRef).then((userSnap) => {
+          let profileData: UserProfile;
+          
+          if (userSnap.exists()) {
+            profileData = userSnap.data() as UserProfile;
+            profileData.isOnline = true;
+            setUserProfile(profileData);
+            
+            // Update online status
+            updateDoc(userRef, {
+              isOnline: true,
+              lastSeen: Date.now()
+            }).catch(console.error);
+          } else {
+            // Create basic profile on first login
+            profileData = {
+              uid: user.uid,
+              displayName: user.displayName || 'New User',
+              photoURL: user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName || 'U'}`,
+              statusMessage: "Hey there! I am using Firebase Chat.",
+              isOnline: true,
+              lastSeen: Date.now()
+            };
+            setUserProfile(profileData);
+            setDoc(userRef, profileData).catch(console.error);
+          }
+        }).catch(console.error);
       } else {
         setUserProfile(null);
       }
-      
-      setLoading(false);
     });
 
     return unsubscribe;
