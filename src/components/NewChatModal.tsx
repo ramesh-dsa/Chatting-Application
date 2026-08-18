@@ -79,12 +79,24 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
     setCreating(true);
     try {
       const participants = [userProfile.uid, ...Array.from(selectedUsers)];
+      const groupNameTrimmed = groupName.trim();
+      const now = Date.now();
       const convoRef = await addDoc(collection(db, 'conversations'), {
         type: 'group',
         participants,
-        groupName: groupName.trim(),
-        updatedAt: Date.now(),
-        lastMessage: '',
+        groupName: groupNameTrimmed,
+        updatedAt: now,
+        lastMessage: `${userProfile.displayName} created this group`,
+        lastMessageTimestamp: now,
+      });
+
+      // Add system message
+      await addDoc(collection(db, `conversations/${convoRef.id}/messages`), {
+        senderId: null,
+        type: 'system',
+        text: `${userProfile.displayName} created this group`,
+        timestamp: now,
+        readBy: []
       });
       
       onSelectConversation(convoRef.id);

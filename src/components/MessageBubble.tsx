@@ -19,6 +19,16 @@ export default function MessageBubble({
   isGroupChat
 }: MessageBubbleProps) {
   
+  if (message.type === 'system') {
+    return (
+      <div className="flex justify-center my-3 w-full">
+        <span className="bg-black/5 text-muted-foreground text-xs px-3 py-1.5 rounded-full text-center">
+          {message.text}
+        </span>
+      </div>
+    );
+  }
+
   // WhatsApp style corner radius grouping logic
   let radiusClass = 'rounded-2xl';
   if (isOwnMessage) {

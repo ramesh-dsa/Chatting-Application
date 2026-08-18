@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { MoreVertical, Phone, Video, ArrowLeft } from 'lucide-react';
 import { db } from '../lib/firebase';
@@ -6,6 +6,24 @@ import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile } from '../types';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
+import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
+
+function getDateSeparatorLabel(date: Date): string {
+  if (isToday(date)) return 'Today';
+  if (isYesterday(date)) return 'Yesterday';
+  if (isSameYear(date, new Date())) return format(date, 'd MMMM'); // e.g. "16 August"
+  return format(date, 'd MMMM yyyy'); // e.g. "16 August 2025"
+}
+
+function DateSeparator({ label }: { label: string }) {
+  return (
+    <div className="flex justify-center my-4 sticky top-2 z-10">
+      <span className="bg-surface shadow-sm text-muted-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border">
+        {label}
+      </span>
+    </div>
+  );
+}
 
 interface ChatWindowProps {
   conversationId: string;
@@ -68,8 +86,8 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
 
       // Handle Read Receipts (MVP: just update the readBy array if our uid isn't in it)
       if (userProfile && msgs.length > 0) {
-        const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg.senderId !== userProfile.uid && !lastMsg.readBy.includes(userProfile.uid)) {
+        const lastMsg = msgs.slice().reverse().find(m => m.type !== 'system');
+        if (lastMsg && lastMsg.senderId !== userProfile.uid && !lastMsg.readBy.includes(userProfile.uid)) {
           updateDoc(doc(db, `conversations/${conversationId}/messages`, lastMsg.id), {
             readBy: [...lastMsg.readBy, userProfile.uid]
           }).catch(console.error);
@@ -171,26 +189,57 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
       </div>
 
       {/* Message List */}
-      <div className="flex-1 w-full overflow-y-auto p-6 scroll-smooth">
+      <div className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative">
         {messages.map((msg, index) => {
+          const currentDate = new Date(msg.timestamp);
+          const previousDate = index > 0 ? new Date(messages[index - 1].timestamp) : null;
+          const showDateSeparator = !previousDate || !isSameDay(currentDate, previousDate);
+
+          const dateSeparatorElement = showDateSeparator ? (
+            <DateSeparator key={`date-${msg.id}`} label={getDateSeparatorLabel(currentDate)} />
+          ) : null;
+
+          if (msg.type === 'system') {
+            return (
+              <React.Fragment key={msg.id}>
+                {dateSeparatorElement}
+                <MessageBubble 
+                  message={msg} 
+                  isOwnMessage={false} 
+                  isFirstInGroup={false}
+                  isLastInGroup={false}
+                  isGroupChat={conversation.type === 'group'}
+                />
+              </React.Fragment>
+            );
+          }
+
           const isOwn = msg.senderId === userProfile?.uid;
           
-          const prevMsg = messages[index - 1];
-          const nextMsg = messages[index + 1];
+          let prevMsg;
+          for (let i = index - 1; i >= 0; i--) {
+            if (messages[i].type !== 'system') { prevMsg = messages[i]; break; }
+          }
+          let nextMsg;
+          for (let i = index + 1; i < messages.length; i++) {
+            if (messages[i].type !== 'system') { nextMsg = messages[i]; break; }
+          }
           
           const isFirstInGroup = !prevMsg || prevMsg.senderId !== msg.senderId || (msg.timestamp - prevMsg.timestamp) > 5 * 60 * 1000;
           const isLastInGroup = !nextMsg || nextMsg.senderId !== msg.senderId || (nextMsg.timestamp - msg.timestamp) > 5 * 60 * 1000;
 
           return (
-            <MessageBubble 
-              key={msg.id} 
-              message={msg} 
-              isOwnMessage={isOwn} 
-              senderProfile={participants[msg.senderId]}
-              isFirstInGroup={isFirstInGroup}
-              isLastInGroup={isLastInGroup}
-              isGroupChat={conversation.type === 'group'}
-            />
+            <React.Fragment key={msg.id}>
+              {dateSeparatorElement}
+              <MessageBubble 
+                message={msg} 
+                isOwnMessage={isOwn} 
+                senderProfile={participants[msg.senderId]}
+                isFirstInGroup={isFirstInGroup}
+                isLastInGroup={isLastInGroup}
+                isGroupChat={conversation.type === 'group'}
+              />
+            </React.Fragment>
           );
         })}
         <div ref={messagesEndRef} />
