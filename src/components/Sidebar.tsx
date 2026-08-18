@@ -3,13 +3,13 @@ import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } fr
 import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import type { Conversation, UserProfile } from '../types';
+import type { Conversation, UserProfile, Message } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 import NewChatModal from './NewChatModal';
 
 interface SidebarProps {
   activeConversationId: string | null;
-  onSelectConversation: (id: string) => void;
+  onSelectConversation: (id: string, messageId?: string) => void;
 }
 
 export default function Sidebar({ activeConversationId, onSelectConversation }: SidebarProps) {
@@ -21,6 +21,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
 
   useEffect(() => {
     const timer = setTimeout(() => {

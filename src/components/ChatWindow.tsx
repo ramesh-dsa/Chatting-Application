@@ -29,9 +29,10 @@ function DateSeparator({ label }: { label: string }) {
 interface ChatWindowProps {
   conversationId: string;
   onBack?: () => void;
+  initialHighlightId?: string | null;
 }
 
-export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) {
+export default function ChatWindow({ conversationId, onBack, initialHighlightId }: ChatWindowProps) {
   const { userProfile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -64,7 +65,7 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
     }
     const queryLower = chatSearchQuery.toLowerCase();
     const results = messages
-      .filter(m => m.type !== 'system' && m.text.toLowerCase().includes(queryLower))
+      .filter(m => m.type !== 'system' && (m.text || '').toLowerCase().includes(queryLower))
       .map(m => m.id);
     
     setSearchResults(results);
@@ -88,10 +89,37 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
         const timer = setTimeout(() => {
           setHighlightedMessageId(prev => prev === msgId ? null : prev);
         }, 1500);
-        return () => clearTimeout(timer);
+        return () => {
+          clearTimeout(timer);
+          setHighlightedMessageId(prev => prev === msgId ? null : prev);
+        };
       }
+    } else {
+      setHighlightedMessageId(null);
     }
   }, [currentSearchIndex, searchResults]);
+
+  // Handle external highlight request (from Sidebar search)
+  useEffect(() => {
+    if (initialHighlightId && messages.length > 0) {
+      // Check if the message is actually loaded
+      const msgExists = messages.some(m => m.id === initialHighlightId);
+      if (msgExists) {
+        const el = document.getElementById(`msg-${initialHighlightId}`);
+        if (el) {
+          // Delay scrolling slightly to ensure rendering is complete
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setHighlightedMessageId(initialHighlightId);
+            
+            setTimeout(() => {
+              setHighlightedMessageId(prev => prev === initialHighlightId ? null : prev);
+            }, 1500);
+          }, 100);
+        }
+      }
+    }
+  }, [initialHighlightId, messages.length]);
 
   // Fetch conversation details and participants
   useEffect(() => {
