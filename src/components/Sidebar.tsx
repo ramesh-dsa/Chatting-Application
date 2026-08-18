@@ -237,6 +237,8 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     return <MyProfilePanel onClose={() => setShowMyProfile(false)} />;
   }
 
+  const activeUserProfile = currentUser && usersMap[currentUser.uid] ? usersMap[currentUser.uid] : userProfile;
+
   return (
     <div className="w-full h-full flex flex-col bg-surface">
       {/* Header */}
@@ -246,13 +248,14 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
           onClick={() => setShowMyProfile(true)}
         >
           <div className="relative">
-            {userProfile?.photoURL ? (
+            {activeUserProfile?.photoURL ? (
               <img 
-                src={userProfile.photoURL} 
+                key={activeUserProfile.photoURL}
+                src={activeUserProfile.photoURL} 
                 alt="Profile" 
                 className="w-10 h-10 rounded-full object-cover border border-border"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${userProfile?.displayName || 'U'}`;
+                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${activeUserProfile?.displayName || 'U'}`;
                 }}
               />
             ) : (
@@ -260,12 +263,12 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
             )}
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
           </div>
-          <h1 className="font-semibold text-foreground truncate w-32">{userProfile?.displayName}</h1>
+          <h1 className="font-semibold text-foreground truncate w-32">{activeUserProfile?.displayName}</h1>
         </div>
         <div className="flex space-x-1">
           <button 
             onClick={() => setIsNewChatModalOpen(true)}
-            className="p-2 rounded-full hover:bg-surface-hover text-muted-foreground transition-colors"
+            className="hidden md:block p-2 rounded-full hover:bg-surface-hover text-muted-foreground transition-colors"
             title="New Chat"
           >
             <Plus className="w-5 h-5" />

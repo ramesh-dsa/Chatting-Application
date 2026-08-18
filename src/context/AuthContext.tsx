@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import type { UserProfile } from '../types';
 
@@ -26,10 +26,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let unsubscribeDoc: (() => void) | undefined;
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setLoading(false); // Unblock app immediately
       
+      if (unsubscribeDoc) {
+        unsubscribeDoc();
+      }
+
       if (user) {
         const userRef = doc(db, 'users', user.uid);
         
@@ -48,7 +54,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               lastSeen: Date.now()
             }).catch(console.error);
           } else {
-            // Create basic profile on first login
             profileData = {
               uid: user.uid,
               displayName: user.displayName || 'New User',
@@ -60,13 +65,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setUserProfile(profileData);
             setDoc(userRef, profileData).catch(console.error);
           }
+
+          unsubscribeDoc = onSnapshot(userRef, (snap) => {
+            if (snap.exists()) {
+              setUserProfile(snap.data() as UserProfile);
+            }
+          });
         }).catch(console.error);
       } else {
         setUserProfile(null);
       }
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (unsubscribeDoc) {
+        unsubscribeDoc();
+      }
+    };
   }, []);
 
   return (

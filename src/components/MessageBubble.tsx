@@ -40,11 +40,7 @@ const MessageBubble = function MessageBubble({
 }: MessageBubbleProps) {
   const [showMenu, setShowMenu] = React.useState(false);
 
-  const handleBubbleClick = () => {
-    if (selectionMode && onToggleSelect) {
-      onToggleSelect(message.id);
-    }
-  };
+
 
   if (message.type === 'system') {
     return (
@@ -87,6 +83,23 @@ const MessageBubble = function MessageBubble({
     }
   }
 
+  const handleBubbleClick = (e: React.MouseEvent) => {
+    if (selectionMode) {
+      onToggleSelect?.(message.id);
+    } else {
+      setShowMenu(!showMenu);
+    }
+  };
+
+  const handlePlay = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    const audios = document.getElementsByTagName('audio');
+    for (let i = 0; i < audios.length; i++) {
+      if (audios[i] !== e.currentTarget) {
+        audios[i].pause();
+      }
+    }
+  };
+
   return (
     <div className={`flex w-full ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-2' : ''}`}>
       {selectionMode && (
@@ -103,7 +116,7 @@ const MessageBubble = function MessageBubble({
         </div>
       )}
       <div 
-        className={`flex max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} ${selectionMode ? 'cursor-pointer' : ''}`}
+        className={`flex max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} cursor-pointer`}
         onClick={handleBubbleClick}
       >
         
@@ -148,8 +161,9 @@ const MessageBubble = function MessageBubble({
             )}
 
             {message.text && (
-              <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${message.attachmentUrl ? 'mb-2' : ''} mr-12`}>
+              <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${message.attachmentUrl ? 'mb-2' : ''}`}>
                 {message.text}
+                <span className="inline-block w-14" />
               </p>
             )}
             
@@ -165,6 +179,13 @@ const MessageBubble = function MessageBubble({
                   />
                 ) : message.attachmentType === 'video' ? (
                   <video src={message.attachmentUrl} controls className="rounded-lg max-w-full h-auto max-h-64 object-cover" />
+                ) : message.attachmentType === 'voice' ? (
+                  <audio 
+                    src={message.attachmentUrl} 
+                    controls 
+                    className="w-full min-w-[200px] h-10 mt-1" 
+                    onPlay={handlePlay}
+                  />
                 ) : (
                   <a 
                     href={message.attachmentUrl} 

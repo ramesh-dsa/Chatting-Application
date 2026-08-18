@@ -29,12 +29,13 @@ export interface Message {
   senderId: string | null;
   text: string;
   attachmentUrl?: string;
-  attachmentType?: 'image' | 'video' | 'document';
+  attachmentType?: 'image' | 'video' | 'document' | 'voice';
   attachmentName?: string;
   attachmentSize?: number;
+  duration?: number; // Duration of voice note in seconds
   timestamp: number;
   readBy: string[]; // Array of UIDs
   deliveredTo?: string[]; // Array of UIDs
-  type: 'text' | 'image' | 'video' | 'document' | 'system';
+  type: 'text' | 'image' | 'video' | 'document' | 'system' | 'voice';
   forwarded?: boolean;
 }

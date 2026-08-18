@@ -5,6 +5,7 @@ import { doc, updateDoc, arrayRemove, arrayUnion, collection, getDocs, addDoc } 
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile } from '../types';
 import { format } from 'date-fns';
+import ImageCropperModal from './ImageCropperModal';
 
 interface GroupInfoPanelProps {
   conversation: Conversation;
@@ -22,6 +23,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
   const [showAddMember, setShowAddMember] = useState(false);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   const isAdmin = userProfile ? conversation.admins?.includes(userProfile.uid) : false;
   const creator = conversation.createdBy ? usersMap[conversation.createdBy] : null;
@@ -78,9 +80,22 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
     setIsEditingDescription(false);
   };
 
-  const handleUpdatePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !isAdmin) return;
+
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      setCropImageSrc(reader.result?.toString() || null);
+    });
+    reader.readAsDataURL(file);
+    
+    e.target.value = ''; // Reset input
+  };
+
+  const handleCropComplete = async (croppedFile: File) => {
+    setCropImageSrc(null);
+    if (!isAdmin) return;
 
     try {
       setUploadingImage(true);
@@ -92,7 +107,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
       }
 
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', croppedFile);
       formData.append('upload_preset', uploadPreset);
 
       const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
@@ -213,7 +228,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
 
   if (showAddMember) {
     return (
-      <div className="w-full md:w-[380px] h-full bg-surface border-l border-border flex flex-col shadow-xl z-20">
+      <div className="absolute inset-0 md:relative w-full md:w-[380px] h-full bg-surface md:border-l border-border flex flex-col shadow-xl z-20">
         <div className="h-16 flex items-center px-4 border-b border-border bg-surface shrink-0">
           <button onClick={() => setShowAddMember(false)} className="p-2 mr-2 text-muted-foreground hover:bg-background rounded-full transition-colors">
             <X className="w-5 h-5" />
@@ -245,7 +260,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
   }
 
   return (
-    <div className="w-full md:w-[380px] h-full bg-surface border-l border-border flex flex-col shadow-xl z-20 overflow-y-auto">
+    <div className="absolute inset-0 md:relative w-full md:w-[380px] h-full bg-surface md:border-l border-border flex flex-col shadow-xl z-20 overflow-y-auto">
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-border bg-surface shrink-0 sticky top-0 z-10">
         <h2 className="font-semibold text-foreground">Group Info</h2>
@@ -267,7 +282,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
           {isAdmin && (
             <label className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity">
               <Camera className="w-8 h-8 text-white" />
-              <input type="file" className="hidden" accept="image/*" onChange={handleUpdatePhoto} disabled={uploadingImage} />
+              <input type="file" className="hidden" accept="image/*" onChange={handleFileSelect} disabled={uploadingImage} />
             </label>
           )}
         </div>
@@ -439,6 +454,13 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
         </button>
       </div>
 
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onClose={() => setCropImageSrc(null)}
+          onCropComplete={handleCropComplete}
+        />
+      )}
     </div>
   );
 }

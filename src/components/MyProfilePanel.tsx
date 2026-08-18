@@ -3,6 +3,7 @@ import { ArrowLeft, Camera, Edit2, Check } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import ImageCropperModal from './ImageCropperModal';
 
 interface MyProfilePanelProps {
   onClose: () => void;
@@ -18,6 +19,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
   const [newAbout, setNewAbout] = useState(userProfile?.about || 'Hey there! I am using Chat.');
   
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   const handleUpdateName = async () => {
     if (!userProfile) return;
@@ -42,9 +44,22 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
     setIsEditingAbout(false);
   };
 
-  const handleUpdatePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !userProfile) return;
+
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      setCropImageSrc(reader.result?.toString() || null);
+    });
+    reader.readAsDataURL(file);
+    
+    e.target.value = ''; // Reset input
+  };
+
+  const handleCropComplete = async (croppedFile: File) => {
+    setCropImageSrc(null);
+    if (!userProfile) return;
 
     try {
       setUploadingImage(true);
@@ -56,7 +71,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
       }
 
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', croppedFile);
       formData.append('upload_preset', uploadPreset);
 
       const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
@@ -99,6 +114,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
           <div className="w-40 h-40 rounded-full overflow-hidden bg-accent/10 flex items-center justify-center border-2 border-border">
             {userProfile.photoURL ? (
               <img 
+                key={userProfile.photoURL}
                 src={userProfile.photoURL} 
                 alt="Profile" 
                 className="w-full h-full object-cover"
@@ -115,7 +131,14 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
             <span className="text-white text-xs font-medium text-center px-4">
               {uploadingImage ? 'UPLOADING...' : 'CHANGE PROFILE PHOTO'}
             </span>
-            <input type="file" className="hidden" accept="image/*" onChange={handleUpdatePhoto} disabled={uploadingImage} />
+            <input 
+              type="file" 
+              id="profile-upload"
+              className="hidden"
+              accept="image/*"
+              onChange={handleFileSelect}
+              disabled={uploadingImage}
+            />
           </label>
         </div>
       </div>
@@ -176,6 +199,14 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
           )}
         </div>
       </div>
+
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onClose={() => setCropImageSrc(null)}
+          onCropComplete={handleCropComplete}
+        />
+      )}
     </div>
   );
 }

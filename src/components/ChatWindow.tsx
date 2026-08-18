@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch, limit } from 'firebase/firestore';
 import { ref } from 'firebase/storage';
-import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward } from 'lucide-react';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, Copy, CheckSquare } from 'lucide-react';
 import { db, storage } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile } from '../types';
@@ -44,6 +44,19 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; senderName: string; timestamp: number; name: string } | null>(null);
@@ -281,7 +294,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     }
   };
 
-  const handleSendMessage = async (text: string, file?: File | null) => {
+  const handleSendMessage = async (text: string, file?: File | Blob | null, duration?: number) => {
     if (!currentUser || !conversationId) return;
 
     try {
@@ -304,8 +317,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         formData.append('file', file);
         formData.append('upload_preset', uploadPreset);
         
-        // Use raw upload for documents, auto for images/videos
-        const resourceType = file.type.startsWith('image/') || file.type.startsWith('video/') ? 'auto' : 'raw';
+        // Use raw upload for documents, auto for images/videos/audio
+        const resourceType = file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/') ? 'auto' : 'raw';
         const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
 
         await new Promise<void>((resolve, reject) => {
@@ -345,11 +358,21 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           xhr.send(formData);
         });
 
-        if (file.type.startsWith('image/')) attachmentType = 'image';
-        else if (file.type.startsWith('video/')) attachmentType = 'video';
-        else attachmentType = 'document';
+        if (duration !== undefined && file.type.startsWith('audio/')) {
+          attachmentType = 'voice';
+          // Name isn't crucial for voice, but let's give it a timestamp
+          attachmentName = `Voice message ${format(Date.now(), 'HH:mm')}`;
+        } else if (file.type.startsWith('image/')) {
+          attachmentType = 'image';
+          attachmentName = (file as File).name || 'Image';
+        } else if (file.type.startsWith('video/')) {
+          attachmentType = 'video';
+          attachmentName = (file as File).name || 'Video';
+        } else {
+          attachmentType = 'document';
+          attachmentName = (file as File).name || 'Document';
+        }
         
-        attachmentName = file.name;
         attachmentSize = file.size;
         setUploadProgress(null);
       }
@@ -367,6 +390,9 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         msgData.attachmentType = attachmentType;
         msgData.attachmentName = attachmentName;
         msgData.attachmentSize = attachmentSize;
+        if (duration !== undefined) {
+          msgData.duration = duration;
+        }
       }
 
       await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
@@ -383,7 +409,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
       // Update the conversation's last message and unread counts
       await updateDoc(doc(db, 'conversations', conversationId), {
-        lastMessage: attachmentType ? `[${attachmentType === 'image' ? 'Photo' : attachmentType === 'video' ? 'Video' : 'Document'}] ${text.trim()}` : text.trim(),
+        lastMessage: attachmentType ? `[${attachmentType === 'image' ? 'Photo' : attachmentType === 'video' ? 'Video' : attachmentType === 'voice' ? 'Voice Message' : 'Document'}] ${text.trim()}` : text.trim(),
         lastMessageTimestamp: Date.now(),
         updatedAt: Date.now(),
         ...unreadUpdates
@@ -435,14 +461,37 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               </button>
               <span className="font-medium">{selectedMessageIds.size} selected</span>
             </div>
-            <button 
-              onClick={() => setShowForwardModal(true)}
-              disabled={selectedMessageIds.size === 0}
-              className="p-2 hover:bg-black/10 rounded-full transition-colors disabled:opacity-50"
-              title="Forward"
-            >
-              <Forward className="w-5 h-5" />
-            </button>
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={() => {
+                  const msgsToCopy = messages
+                    .filter(m => selectedMessageIds.has(m.id))
+                    .map(m => m.text)
+                    .filter(Boolean)
+                    .join('\n\n');
+                  
+                  if (msgsToCopy) {
+                    navigator.clipboard.writeText(msgsToCopy);
+                    setToastMessage("Messages copied to clipboard");
+                  }
+                  setForwardSelectionMode(false);
+                  setSelectedMessageIds(new Set());
+                }}
+                disabled={selectedMessageIds.size === 0}
+                className="p-2 hover:bg-black/10 rounded-full transition-colors disabled:opacity-50"
+                title="Copy"
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setShowForwardModal(true)}
+                disabled={selectedMessageIds.size === 0}
+                className="p-2 hover:bg-black/10 rounded-full transition-colors disabled:opacity-50"
+                title="Forward"
+              >
+                <Forward className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -535,16 +584,38 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               >
                 <Video className="w-5 h-5" />
               </button>
-              <button 
-                onClick={() => setIsSearching(true)}
-                className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-              <button className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors">
-                <MoreVertical className="w-5 h-5" />
-              </button>
-              
+              <div className="relative" ref={menuRef}>
+                <button 
+                  onClick={() => setShowMenu(!showMenu)}
+                  className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+                {showMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-xl shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-2">
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-background flex items-center space-x-3 transition-colors"
+                      onClick={() => {
+                        setIsSearching(true);
+                        setShowMenu(false);
+                      }}
+                    >
+                      <Search className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Search</span>
+                    </button>
+                    <button
+                      className="w-full text-left px-4 py-2 hover:bg-background flex items-center space-x-3 transition-colors"
+                      onClick={() => {
+                        setForwardSelectionMode(true);
+                        setShowMenu(false);
+                      }}
+                    >
+                      <CheckSquare className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">Select Messages</span>
+                    </button>
+                  </div>
+                )}
+              </div>
               {/* Simple Toast */}
               {toastMessage && (
                 <div className="absolute top-full right-0 mt-2 whitespace-nowrap bg-surface border border-border shadow-lg rounded-lg px-4 py-2 text-sm text-foreground animate-in slide-in-from-top-2 fade-in z-50">
