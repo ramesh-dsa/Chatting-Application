@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import React from 'react';
+import VerificationPending from './VerificationPending';
 
 export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { currentUser, loading } = useAuth();
@@ -15,6 +16,11 @@ export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;
+  }
+
+  const isPasswordProvider = currentUser.providerData.some(p => p.providerId === 'password');
+  if (isPasswordProvider && !currentUser.emailVerified) {
+    return <VerificationPending user={currentUser} />;
   }
 
   return children;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { MessageSquare, User, Mail, Lock, Loader2 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
@@ -48,6 +48,9 @@ export default function Signup() {
         isOnline: true,
         lastSeen: Date.now()
       });
+
+      // Send verification email
+      await sendEmailVerification(user);
 
       navigate('/');
     } catch (err: any) {

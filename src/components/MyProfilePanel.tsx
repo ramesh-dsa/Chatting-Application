@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { ArrowLeft, Camera, Edit2, Check } from 'lucide-react';
-import { db, storage } from '../lib/firebase';
+import { db, storage, auth } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import ImageCropperModal from './ImageCropperModal';
 
 interface MyProfilePanelProps {
@@ -20,6 +21,16 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
   
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+
+  const { currentUser } = useAuth();
+  const isPasswordProvider = currentUser?.providerData.some(p => p.providerId === 'password');
+  
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   const handleUpdateName = async () => {
     if (!userProfile) return;
@@ -93,6 +104,33 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
       console.error("Error uploading photo:", error);
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !currentUser.email) return;
+
+    setPasswordError('');
+    setPasswordSuccess('');
+    setIsChangingPassword(true);
+
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
+      
+      setPasswordSuccess('Password updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setTimeout(() => {
+        setShowPasswordForm(false);
+        setPasswordSuccess('');
+      }, 3000);
+    } catch (err: any) {
+      setPasswordError(err.message || 'Failed to change password. Please check your current password.');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -198,6 +236,83 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
             </div>
           )}
         </div>
+
+        {/* Change Password Section (Only for Email/Password users) */}
+        {isPasswordProvider && (
+          <div className="bg-surface rounded-xl p-4 shadow-sm border border-border">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-accent uppercase tracking-wider">Security</p>
+              {!showPasswordForm && (
+                <button 
+                  onClick={() => setShowPasswordForm(true)}
+                  className="text-xs font-medium text-accent hover:underline focus:outline-none"
+                >
+                  Change Password
+                </button>
+              )}
+            </div>
+            
+            {showPasswordForm && (
+              <form onSubmit={handleChangePassword} className="space-y-3 mt-3">
+                {passwordError && (
+                  <div className="bg-destructive/10 text-destructive text-xs p-2 rounded-lg border border-destructive/20">
+                    {passwordError}
+                  </div>
+                )}
+                {passwordSuccess && (
+                  <div className="bg-green-500/10 text-green-500 text-xs p-2 rounded-lg border border-green-500/20">
+                    {passwordSuccess}
+                  </div>
+                )}
+                
+                <div>
+                  <input
+                    type="password"
+                    placeholder="Current Password"
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full text-sm bg-background border rounded-lg px-3 py-2 focus:ring-1 focus:ring-accent focus:border-transparent outline-none transition-shadow"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="password"
+                    placeholder="New Password (min 6 chars)"
+                    required
+                    minLength={6}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full text-sm bg-background border rounded-lg px-3 py-2 focus:ring-1 focus:ring-accent focus:border-transparent outline-none transition-shadow"
+                  />
+                </div>
+                
+                <div className="flex items-center justify-end space-x-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordForm(false);
+                      setPasswordError('');
+                      setPasswordSuccess('');
+                      setCurrentPassword('');
+                      setNewPassword('');
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-surface-hover rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword || !currentPassword || newPassword.length < 6}
+                    className="px-3 py-1.5 text-xs font-medium bg-accent text-accent-foreground rounded-lg hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface focus:ring-accent disabled:opacity-50 transition-all"
+                  >
+                    {isChangingPassword ? 'Updating...' : 'Update Password'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
       </div>
 
       {cropImageSrc && (
