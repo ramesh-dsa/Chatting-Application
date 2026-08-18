@@ -19,6 +19,7 @@ export interface Conversation {
   lastMessage?: string;
   lastMessageTimestamp?: number;
   updatedAt: number;
+  unreadCounts?: Record<string, number>;
 }
 
 export interface Message {
@@ -29,5 +30,6 @@ export interface Message {
   attachmentType?: 'image' | 'file';
   timestamp: number;
   readBy: string[]; // Array of UIDs
+  deliveredTo?: string[]; // Array of UIDs
   type: 'text' | 'image' | 'file' | 'system';
 }

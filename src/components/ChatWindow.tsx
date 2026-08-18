@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch } from 'firebase/firestore';
 import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -168,13 +168,43 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
 
-      // Handle Read Receipts (MVP: just update the readBy array if our uid isn't in it)
+      // Handle Read Receipts (Mark all unread messages from others as read & delivered)
       if (userProfile && msgs.length > 0) {
-        const lastMsg = msgs.slice().reverse().find(m => m.type !== 'system');
-        if (lastMsg && lastMsg.senderId !== userProfile.uid && !lastMsg.readBy.includes(userProfile.uid)) {
-          updateDoc(doc(db, `conversations/${conversationId}/messages`, lastMsg.id), {
-            readBy: [...lastMsg.readBy, userProfile.uid]
-          }).catch(console.error);
+        const unreadMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== userProfile.uid && !m.readBy.includes(userProfile.uid));
+        
+        if (unreadMsgs.length > 0) {
+          const batch = writeBatch(db);
+          unreadMsgs.forEach(m => {
+            const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
+            const updatedReadBy = m.readBy.includes(userProfile.uid) ? m.readBy : [...m.readBy, userProfile.uid];
+            const updatedDeliveredTo = m.deliveredTo?.includes(userProfile.uid) ? m.deliveredTo : [...(m.deliveredTo || []), userProfile.uid];
+            
+            batch.update(msgRef, {
+              readBy: updatedReadBy,
+              deliveredTo: updatedDeliveredTo
+            });
+          });
+          
+          // Also reset unread count for current user
+          const convoRef = doc(db, 'conversations', conversationId);
+          batch.update(convoRef, {
+            [`unreadCounts.${userProfile.uid}`]: 0
+          });
+          
+          batch.commit().catch(console.error);
+        } else {
+          // Check if any messages are just undelivered and mark them delivered
+          const undeliveredMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== userProfile.uid && !m.deliveredTo?.includes(userProfile.uid));
+          if (undeliveredMsgs.length > 0) {
+            const batch = writeBatch(db);
+            undeliveredMsgs.forEach(m => {
+              const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
+              batch.update(msgRef, {
+                deliveredTo: [...(m.deliveredTo || []), userProfile.uid]
+              });
+            });
+            batch.commit().catch(console.error);
+          }
         }
       }
     });
@@ -196,11 +226,22 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
 
       await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
 
-      // Update the conversation's last message
+      // Prepare unread counts increment for other participants
+      const unreadUpdates: Record<string, any> = {};
+      if (conversation?.participants) {
+        conversation.participants.forEach(uid => {
+          if (uid !== userProfile.uid) {
+            unreadUpdates[`unreadCounts.${uid}`] = increment(1);
+          }
+        });
+      }
+
+      // Update the conversation's last message and unread counts
       await updateDoc(doc(db, 'conversations', conversationId), {
         lastMessage: text.trim(),
         lastMessageTimestamp: Date.now(),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        ...unreadUpdates
       });
     } catch (error) {
       console.error("Error sending message:", error);

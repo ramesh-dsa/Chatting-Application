@@ -84,6 +84,45 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
     return () => unsubscribe();
   }, [userProfile, activeConversationId, hasNotificationPermission]);
 
+  // Keep a local cache of the last 50 messages for each conversation to support client-side search
+  // and handle message delivery receipts (double gray ticks)
+  useEffect(() => {
+    if (!userProfile?.uid) return;
+    
+    import('firebase/firestore').then(({ limit, writeBatch, doc }) => {
+      const unsubscribes = conversations.map(convo => {
+        const q = query(
+          collection(db, `conversations/${convo.id}/messages`),
+          orderBy('timestamp', 'desc'),
+          limit(50)
+        );
+        return onSnapshot(q, snapshot => {
+          const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Message));
+          setMessagesCache(prev => ({ ...prev, [convo.id]: msgs.slice().reverse() }));
+
+          // Process delivery receipts: mark undelivered messages from others as delivered
+          const undeliveredMsgs = msgs.filter(m => 
+            m.type !== 'system' && 
+            m.senderId !== userProfile.uid && 
+            !m.deliveredTo?.includes(userProfile.uid)
+          );
+
+          if (undeliveredMsgs.length > 0) {
+            const batch = writeBatch(db);
+            undeliveredMsgs.forEach(m => {
+              const msgRef = doc(db, `conversations/${convo.id}/messages`, m.id);
+              batch.update(msgRef, {
+                deliveredTo: [...(m.deliveredTo || []), userProfile.uid]
+              });
+            });
+            batch.commit().catch(console.error);
+          }
+        });
+      });
+      return () => unsubscribes.forEach(unsub => unsub());
+    });
+  }, [conversations.map(c => c.id).join(',')]);
+
   const handleLogout = () => {
     auth.signOut();
   };
@@ -135,6 +174,38 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
     } catch (err) {
       console.error("Error creating direct chat:", err);
     }
+  };
+
+  const filteredMessages = Object.entries(messagesCache).flatMap(([convoId, msgs]) => {
+    if (debouncedSearchQuery.trim() === '') return [];
+    
+    const convo = conversations.find(c => c.id === convoId);
+    if (!convo) return [];
+
+    return msgs
+      .filter(m => m.type !== 'system' && (m.text || '').toLowerCase().includes(debouncedSearchQuery.trim().toLowerCase()))
+      .map(m => ({
+        message: m,
+        conversationId: convoId,
+        conversation: convo
+      }));
+  }).sort((a, b) => b.message.timestamp - a.message.timestamp);
+
+  const getConvoDisplayInfo = (convo: Conversation) => {
+    const isGroup = convo.type === 'group';
+    let displayName = 'Direct Message';
+    let photoURL = '';
+
+    if (isGroup) {
+      displayName = convo.groupName || 'Group';
+    } else {
+      const otherUserId = convo.participants.find(id => id !== userProfile?.uid);
+      if (otherUserId && usersMap[otherUserId]) {
+        displayName = usersMap[otherUserId].displayName;
+        photoURL = usersMap[otherUserId].photoURL;
+      }
+    }
+    return { displayName, photoURL, isGroup };
   };
 
   return (
@@ -200,7 +271,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
               </div>
             ))}
           </div>
-        ) : filteredConversations.length === 0 && filteredContacts.length === 0 ? (
+        ) : filteredConversations.length === 0 && filteredContacts.length === 0 && filteredMessages.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground flex flex-col items-center">
             {debouncedSearchQuery ? (
               <p className="text-sm">No results found.</p>
@@ -213,74 +284,72 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
             )}
           </div>
         ) : (
-          <div className="px-2 pb-4">
+          <div className="px-2 pb-24">
             {filteredConversations.length > 0 && (
-              <ul className="space-y-1">
-                {filteredConversations.map((convo) => {
-              const isActive = convo.id === activeConversationId;
-              const isGroup = convo.type === 'group';
-              
-              let displayName = 'Direct Message';
-              let photoURL = '';
-
-              if (isGroup) {
-                displayName = convo.groupName || 'Group';
-              } else {
-                const otherUserId = convo.participants.find(id => id !== userProfile?.uid);
-                if (otherUserId && usersMap[otherUserId]) {
-                  displayName = usersMap[otherUserId].displayName;
-                  photoURL = usersMap[otherUserId].photoURL;
-                }
-              }
-              
-              return (
-                <li key={convo.id}>
-                  <button
-                    onClick={() => onSelectConversation(convo.id)}
-                    className={`w-full flex items-center p-3 rounded-xl transition-all ${
-                      isActive 
-                        ? 'bg-accent/10 text-foreground' 
-                        : 'hover:bg-surface-hover text-muted-foreground'
-                    }`}
-                  >
-                    <div className="relative flex-shrink-0">
-                      {isGroup ? (
-                        <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent">
-                          <Users className="w-6 h-6" />
-                        </div>
-                      ) : photoURL ? (
-                        <img src={photoURL} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-surface-hover flex items-center justify-center">
-                          <MessageSquare className="w-5 h-5 opacity-50" />
-                        </div>
-                      )}
-                    </div>
+              <div className="mb-4">
+                {debouncedSearchQuery && <div className="px-3 mb-2 text-xs font-semibold text-muted uppercase tracking-wider">Chats</div>}
+                <ul className="space-y-1">
+                  {filteredConversations.map((convo) => {
+                    const isActive = convo.id === activeConversationId;
+                    const { displayName, photoURL, isGroup } = getConvoDisplayInfo(convo);
+                    const unreadCount = (userProfile && convo.unreadCounts?.[userProfile.uid]) || 0;
                     
-                    <div className="ml-4 flex-1 min-w-0 text-left">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className={`text-sm font-medium truncate ${isActive ? 'text-foreground' : 'text-foreground'}`}>
-                          {displayName}
-                        </h3>
-                        {convo.updatedAt && (
-                          <span className="text-xs text-muted">
-                            {formatDistanceToNow(convo.updatedAt, { addSuffix: true })}
-                          </span>
-                        )}
-                      </div>
-                      <p className={`text-xs truncate ${isActive ? 'text-foreground/80' : 'text-muted'}`}>
-                        {convo.lastMessage || 'No messages yet'}
-                      </p>
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-              </ul>
+                    return (
+                      <li key={convo.id}>
+                        <button
+                          onClick={() => onSelectConversation(convo.id)}
+                          className={`w-full flex items-center p-3 rounded-xl transition-all ${
+                            isActive 
+                              ? 'bg-accent/10 text-foreground' 
+                              : 'hover:bg-surface-hover text-muted-foreground'
+                          }`}
+                        >
+                          <div className="relative flex-shrink-0">
+                            {isGroup ? (
+                              <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent">
+                                <Users className="w-6 h-6" />
+                              </div>
+                            ) : photoURL ? (
+                              <img src={photoURL} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-12 h-12 rounded-full bg-surface-hover flex items-center justify-center">
+                                <MessageSquare className="w-5 h-5 opacity-50" />
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="ml-4 flex-1 min-w-0 text-left">
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className={`text-sm truncate ${unreadCount > 0 ? 'font-bold text-foreground' : 'font-medium text-foreground'}`}>
+                                {displayName}
+                              </h3>
+                              {convo.updatedAt && (
+                                <span className={`text-xs ${unreadCount > 0 ? 'text-accent font-medium' : 'text-muted'}`}>
+                                  {formatDistanceToNow(convo.updatedAt, { addSuffix: true })}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <p className={`text-xs truncate mr-2 ${unreadCount > 0 ? 'text-foreground font-medium' : 'text-muted'}`}>
+                                {convo.lastMessage || 'No messages yet'}
+                              </p>
+                              {unreadCount > 0 && (
+                                <div className="bg-accent text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center justify-center min-w-[20px] h-5">
+                                  {unreadCount > 99 ? '99+' : unreadCount}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             )}
 
             {filteredContacts.length > 0 && (
-              <div className="mt-4">
+              <div className="mb-4">
                 <div className="px-3 mb-2 text-xs font-semibold text-muted uppercase tracking-wider">Contacts</div>
                 <ul className="space-y-1">
                   {filteredContacts.map(user => (
@@ -306,9 +375,70 @@ export default function Sidebar({ activeConversationId, onSelectConversation }: 
                 </ul>
               </div>
             )}
+
+            {filteredMessages.length > 0 && (
+              <div className="mb-4">
+                <div className="px-3 mb-2 text-xs font-semibold text-muted uppercase tracking-wider">Messages</div>
+                <ul className="space-y-1">
+                  {filteredMessages.map(({ message, conversationId, conversation }) => {
+                    const { displayName, photoURL, isGroup } = getConvoDisplayInfo(conversation);
+                    const senderName = message.senderId === userProfile?.uid 
+                      ? 'You' 
+                      : (usersMap[message.senderId]?.displayName || 'Unknown');
+
+                    return (
+                      <li key={message.id}>
+                        <button
+                          onClick={() => onSelectConversation(conversationId, message.id)}
+                          className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-surface-hover text-muted-foreground"
+                        >
+                          <div className="relative flex-shrink-0">
+                            {isGroup ? (
+                              <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center text-accent">
+                                <Users className="w-6 h-6" />
+                              </div>
+                            ) : photoURL ? (
+                              <img src={photoURL} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-12 h-12 rounded-full bg-surface-hover flex items-center justify-center">
+                                <MessageSquare className="w-5 h-5 opacity-50" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-4 flex-1 min-w-0 text-left">
+                            <div className="flex items-center justify-between mb-1">
+                              <h3 className="text-sm font-medium truncate text-foreground">
+                                {displayName}
+                              </h3>
+                              {message.timestamp && (
+                                <span className="text-xs text-muted">
+                                  {formatDistanceToNow(message.timestamp, { addSuffix: true })}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs truncate text-muted">
+                              <span className="font-medium mr-1">{senderName}:</span>
+                              {message.text}
+                            </p>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* FAB - mobile only */}
+      <button
+        onClick={() => setIsNewChatModalOpen(true)}
+        className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-accent hover:bg-accent/90 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-50"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
       {isNewChatModalOpen && (
         <NewChatModal onClose={() => setIsNewChatModalOpen(false)} onSelectConversation={onSelectConversation} />
