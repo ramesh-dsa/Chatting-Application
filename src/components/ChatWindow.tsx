@@ -36,6 +36,15 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [participants, setParticipants] = useState<Record<string, UserProfile>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Clear toast after 3 seconds
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Fetch conversation details and participants
   useEffect(() => {
@@ -175,16 +184,29 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
             <p className="text-xs text-muted-foreground">{chatStatus}</p>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <button className="p-2 text-muted hover:text-foreground rounded-full hover:bg-surface transition-colors">
+        <div className="flex items-center space-x-2 relative">
+          <button 
+            onClick={() => setToastMessage("Voice calling isn't available yet")}
+            className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
+          >
             <Phone className="w-5 h-5" />
           </button>
-          <button className="p-2 text-muted hover:text-foreground rounded-full hover:bg-surface transition-colors">
+          <button 
+            onClick={() => setToastMessage("Video calling isn't available yet")}
+            className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
+          >
             <Video className="w-5 h-5" />
           </button>
-          <button className="p-2 text-muted hover:text-foreground rounded-full hover:bg-surface transition-colors">
+          <button className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors">
             <MoreVertical className="w-5 h-5" />
           </button>
+          
+          {/* Simple Toast */}
+          {toastMessage && (
+            <div className="absolute top-full right-0 mt-2 whitespace-nowrap bg-surface border border-border shadow-lg rounded-lg px-4 py-2 text-sm text-foreground animate-in slide-in-from-top-2 fade-in z-50">
+              {toastMessage}
+            </div>
+          )}
         </div>
       </div>
 
@@ -225,8 +247,15 @@ export default function ChatWindow({ conversationId, onBack }: ChatWindowProps) 
             if (messages[i].type !== 'system') { nextMsg = messages[i]; break; }
           }
           
-          const isFirstInGroup = !prevMsg || prevMsg.senderId !== msg.senderId || (msg.timestamp - prevMsg.timestamp) > 5 * 60 * 1000;
-          const isLastInGroup = !nextMsg || nextMsg.senderId !== msg.senderId || (nextMsg.timestamp - msg.timestamp) > 5 * 60 * 1000;
+          const isFirstInGroup = !prevMsg || 
+            prevMsg.senderId !== msg.senderId || 
+            (msg.timestamp - prevMsg.timestamp) > 5 * 60 * 1000 ||
+            !isSameDay(msg.timestamp, prevMsg.timestamp);
+
+          const isLastInGroup = !nextMsg || 
+            nextMsg.senderId !== msg.senderId || 
+            (nextMsg.timestamp - msg.timestamp) > 5 * 60 * 1000 ||
+            !isSameDay(msg.timestamp, nextMsg.timestamp);
 
           return (
             <React.Fragment key={msg.id}>

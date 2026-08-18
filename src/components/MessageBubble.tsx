@@ -50,12 +50,12 @@ export default function MessageBubble({
       <div className={`flex max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'}`}>
         
         {/* Avatar Spacer for grouped messages */}
-        {!isOwnMessage && !isLastInGroup && (
+        {!isOwnMessage && isGroupChat && !isLastInGroup && (
           <div className="w-8 mr-2 flex-shrink-0" />
         )}
         
         {/* Avatar on last message in group */}
-        {!isOwnMessage && isLastInGroup && (
+        {!isOwnMessage && isGroupChat && isLastInGroup && (
           <img 
             src={senderProfile?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${senderProfile?.displayName || 'U'}`} 
             alt="avatar" 
