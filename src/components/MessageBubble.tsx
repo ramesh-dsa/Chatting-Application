@@ -11,6 +11,7 @@ interface MessageBubbleProps {
   isGroupChat: boolean;
   isHighlighted?: boolean;
   participantCount?: number;
+  onImageClick?: (url: string, name: string) => void;
 }
 
 export default function MessageBubble({ 
@@ -21,7 +22,8 @@ export default function MessageBubble({
   isLastInGroup,
   isGroupChat,
   isHighlighted,
-  participantCount = 2
+  participantCount = 2,
+  onImageClick
 }: MessageBubbleProps) {
   
   if (message.type === 'system') {
@@ -110,7 +112,12 @@ export default function MessageBubble({
             {message.attachmentUrl && (
               <div className={`mt-1 mb-4 ${message.attachmentType === 'document' ? 'mr-0' : 'mr-4'}`}>
                 {message.attachmentType === 'image' ? (
-                  <img src={message.attachmentUrl} alt="attachment" className="rounded-lg max-w-full h-auto max-h-64 object-cover" />
+                  <img 
+                    src={message.attachmentUrl} 
+                    alt="attachment" 
+                    className="rounded-lg max-w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-90 transition-opacity" 
+                    onClick={() => onImageClick?.(message.attachmentUrl!, message.attachmentName || 'Image')}
+                  />
                 ) : message.attachmentType === 'video' ? (
                   <video src={message.attachmentUrl} controls className="rounded-lg max-w-full h-auto max-h-64 object-cover" />
                 ) : (

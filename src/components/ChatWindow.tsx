@@ -8,6 +8,7 @@ import type { Message, Conversation, UserProfile } from '../types';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import GroupInfoPanel from './GroupInfoPanel';
+import ImagePreviewModal from './ImagePreviewModal';
 import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
 
 function getDateSeparatorLabel(date: Date): string {
@@ -42,6 +43,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ url: string; senderName: string; timestamp: number; name: string } | null>(null);
 
   // Search states
   const [isSearching, setIsSearching] = useState(false);
@@ -523,6 +525,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
                 isGroupChat={conversation.type === 'group'}
                 isHighlighted={highlightedMessageId === msg.id}
                 participantCount={conversation.participants.length}
+                onImageClick={(url, name) => setPreviewImage({ 
+                  url, 
+                  senderName: isOwn ? 'You' : participants[msg.senderId]?.displayName || 'User', 
+                  timestamp: msg.timestamp,
+                  name
+                })}
               />
             </React.Fragment>
           );
@@ -544,6 +552,17 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId 
           setShowGroupInfo(false);
           if (onBack) onBack();
         }}
+      />
+    )}
+
+    {/* Image Preview Modal */}
+    {previewImage && (
+      <ImagePreviewModal
+        url={previewImage.url}
+        senderName={previewImage.senderName}
+        timestamp={previewImage.timestamp}
+        originalFileName={previewImage.name}
+        onClose={() => setPreviewImage(null)}
       />
     )}
     </div>
