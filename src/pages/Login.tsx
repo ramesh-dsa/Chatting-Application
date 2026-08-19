@@ -22,7 +22,13 @@ export default function Login() {
       await signInWithEmailAndPassword(auth, email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Failed to log in');
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many failed login attempts. Please try again later.');
+      } else {
+        setError('Failed to log in. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -36,7 +42,11 @@ export default function Login() {
       await signInWithPopup(auth, provider);
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Failed to log in with Google');
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign in was cancelled.');
+      } else {
+        setError('Failed to log in with Google. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
