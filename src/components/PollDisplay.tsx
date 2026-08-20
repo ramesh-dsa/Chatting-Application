@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import type { Message } from '../types';
-import { Check, BarChart2 } from 'lucide-react';
+import type { Message, UserProfile } from '../types';
+import { Check, BarChart2, X } from 'lucide-react';
 
 interface PollDisplayProps {
   message: Message;
   conversationId: string;
   currentUserId: string;
+  usersMap?: Record<string, UserProfile>;
 }
 
-export default function PollDisplay({ message, conversationId, currentUserId }: PollDisplayProps) {
+export default function PollDisplay({ message, conversationId, currentUserId, usersMap }: PollDisplayProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showVotersModal, setShowVotersModal] = useState(false);
   
   // Optimistic UI state
   const [optimisticPollData, setOptimisticPollData] = useState(message.pollData);
@@ -183,10 +185,65 @@ export default function PollDisplay({ message, conversationId, currentUserId }: 
           );
         })}
       </div>
-      <div className="px-4 py-2 border-t border-border bg-surface/50 flex justify-between items-center text-xs text-muted-foreground">
-        <span>{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</span>
+      <div 
+        className={`px-4 py-2 border-t border-border bg-surface/50 flex justify-between items-center text-xs text-muted-foreground ${totalVotes > 0 ? 'cursor-pointer hover:bg-surface-hover transition-colors' : ''}`}
+        onClick={(e) => {
+          if (totalVotes > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowVotersModal(true);
+          }
+        }}
+      >
+        <span className={totalVotes > 0 ? 'text-accent font-medium flex items-center gap-1' : ''}>
+          {totalVotes} vote{totalVotes !== 1 ? 's' : ''} {totalVotes > 0 && '›'}
+        </span>
         {pollData.isClosed && <span className="font-medium text-destructive">Closed</span>}
       </div>
+
+      {/* View Votes Modal */}
+      {showVotersModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={(e) => { e.stopPropagation(); setShowVotersModal(false); }}>
+          <div className="bg-background rounded-xl shadow-xl w-[90vw] max-w-[280px] sm:max-w-[320px] md:max-w-sm overflow-hidden flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-semibold text-foreground">Poll Results</h3>
+              <button onClick={() => setShowVotersModal(false)} className="p-1 hover:bg-surface-hover text-muted-foreground rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-5">
+              {pollData.options.map(opt => {
+                if (opt.voters.length === 0) return null;
+                return (
+                  <div key={opt.id} className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm text-foreground">{opt.text}</span>
+                      <span className="text-xs font-semibold text-muted-foreground bg-surface-hover px-2 py-0.5 rounded-full">{opt.voters.length}</span>
+                    </div>
+                    <div className="flex flex-col gap-2 pl-2 border-l-2 border-border/50">
+                      {opt.voters.map(uid => {
+                        const user = usersMap?.[uid];
+                        return (
+                          <div key={uid} className="flex items-center gap-3">
+                            {user?.photoURL ? (
+                              <img src={user.photoURL} alt={user?.displayName || 'User'} className="w-7 h-7 rounded-full object-cover shadow-sm" />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-[10px] font-bold text-accent shadow-sm">
+                                {user?.displayName?.[0]?.toUpperCase() || '?'}
+                              </div>
+                            )}
+                            <span className="text-sm font-medium text-foreground/90">{user?.displayName || 'Unknown User'}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

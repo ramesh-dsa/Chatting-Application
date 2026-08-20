@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { getFcmToken, onForegroundMessage, onTokenRefresh, isPushSupported } from '../lib/messaging';
+import { getFcmToken, onForegroundMessage, isPushSupported } from '../lib/messaging';
 
 interface BannerState {
   title: string;
@@ -20,7 +20,6 @@ export function usePushNotifications() {
     if (!uid || !isPushSupported()) return;
     let cancelled = false;
     let unsubMessage: (() => void) | null = null;
-    let unsubRefresh: (() => void) | null = null;
     const userRef = doc(db, 'users', uid);
 
     (async () => {
@@ -37,19 +36,12 @@ export function usePushNotifications() {
         if (bannerTimer.current) clearTimeout(bannerTimer.current);
         bannerTimer.current = setTimeout(() => setBanner(null), 5000);
       });
-
-      unsubRefresh = onTokenRefresh(async (newToken) => {
-        if (cancelled) return;
-        await updateDoc(userRef, { fcmTokens: arrayRemove(token), fcmTokens: arrayUnion(newToken) }).catch(console.error);
-        tokenRef.current = newToken;
-      });
     })();
 
     return () => {
       cancelled = true;
       if (bannerTimer.current) clearTimeout(bannerTimer.current);
       unsubMessage?.();
-      unsubRefresh?.();
       const t = tokenRef.current;
       if (t) {
         tokenRef.current = null;

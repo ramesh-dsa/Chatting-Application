@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, increment, writeBatch, limit, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
-import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, Copy, CheckSquare, Image as ImageIcon } from 'lucide-react';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, Copy, CheckSquare, Image as ImageIcon, Trash2, Star, Download } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, UserProfile, PollData } from '../types';
@@ -23,7 +23,7 @@ function getDateSeparatorLabel(date: Date): string {
 const DateSeparator = React.memo(function DateSeparator({ label }: { label: string }) {
   return (
     <div className="flex justify-center my-4 sticky top-2 z-10">
-      <span className="bg-surface shadow-sm text-muted-foreground text-xs font-medium px-3 py-1.5 rounded-lg border border-border">
+      <span className="bg-[#e9eff3] shadow-sm text-[#5b6b73] text-xs font-medium px-3 py-1.5 rounded-lg">
         {label}
       </span>
     </div>
@@ -75,6 +75,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const [previewImage, setPreviewImage] = useState<{ url: string; senderName: string; timestamp: number; name: string } | null>(null);
   const [messageLimit, setMessageLimit] = useState(50);
   const [isFetchingOlder, setIsFetchingOlder] = useState(false);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
 
   // Search states
   const [isSearching, setIsSearching] = useState(false);
@@ -87,6 +88,122 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const [forwardSelectionMode, setForwardSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [showForwardModal, setShowForwardModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleBulkDelete = useCallback(async (mode: 'me' | 'everyone') => {
+    if (!currentUser) return;
+    const batch = writeBatch(db);
+    selectedMessageIds.forEach(id => {
+      const msgRef = doc(db, `conversations/${conversationId}/messages`, id);
+      if (mode === 'everyone') {
+        batch.update(msgRef, {
+          deletedForEveryone: true,
+          text: '',
+          attachmentUrl: '',
+          attachmentType: '',
+          attachmentName: ''
+        });
+      } else {
+        batch.update(msgRef, { deletedFor: arrayUnion(currentUser.uid) });
+      }
+    });
+    try {
+      await batch.commit();
+      setForwardSelectionMode(false);
+      setSelectedMessageIds(new Set());
+      setShowDeleteConfirm(false);
+      setToastMessage(`Deleted ${selectedMessageIds.size} messages`);
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+      setToastMessage("Failed to delete messages");
+    }
+  }, [currentUser, conversationId, selectedMessageIds]);
+
+  const handleBulkStar = useCallback(async () => {
+    if (!currentUser) return;
+    const batch = writeBatch(db);
+    let starredCount = 0;
+    let unstarredCount = 0;
+    
+    // First, determine the action. If ALL are starred, unstar all. Otherwise, star all.
+    const selectedMsgs = messages.filter(m => selectedMessageIds.has(m.id));
+    const allStarred = selectedMsgs.every(m => m.starredBy?.includes(currentUser.uid));
+    
+    selectedMessageIds.forEach(id => {
+      const msgRef = doc(db, `conversations/${conversationId}/messages`, id);
+      if (allStarred) {
+        batch.update(msgRef, { starredBy: arrayRemove(currentUser.uid) });
+        unstarredCount++;
+      } else {
+        batch.update(msgRef, { starredBy: arrayUnion(currentUser.uid) });
+        starredCount++;
+      }
+    });
+    try {
+      await batch.commit();
+      setForwardSelectionMode(false);
+      setSelectedMessageIds(new Set());
+      setToastMessage(allStarred ? `Unstarred ${unstarredCount} messages` : `Starred ${starredCount} messages`);
+    } catch (err) {
+      console.error("Bulk star failed:", err);
+      setToastMessage("Failed to star messages");
+    }
+  }, [currentUser, conversationId, selectedMessageIds, messages]);
+
+  const handleBulkDownload = useCallback(async () => {
+    const selectedMsgs = messages.filter(m => selectedMessageIds.has(m.id));
+    
+    const mediaMsgs = selectedMsgs.filter(m => m.attachmentUrl);
+    const textMsgs = selectedMsgs.filter(m => !m.attachmentUrl && m.text);
+    
+    let downloadedCount = 0;
+    
+    for (const msg of mediaMsgs) {
+      try {
+        const response = await fetch(msg.attachmentUrl!);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = msg.attachmentName || `download-${msg.id}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        downloadedCount++;
+      } catch (err) {
+        console.error("Failed to download media:", err);
+      }
+    }
+    
+    if (textMsgs.length > 0) {
+      try {
+        const textContent = textMsgs.map(m => `[${new Date(m.timestamp).toLocaleString()}] ${usersMap[m.senderId || '']?.displayName || 'Unknown'}: ${m.text}`).join('\n\n');
+        const blob = new Blob([textContent], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `chat-export-${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        downloadedCount++;
+      } catch (err) {
+        console.error("Failed to download text:", err);
+      }
+    }
+    
+    if (downloadedCount > 0) {
+      setForwardSelectionMode(false);
+      setSelectedMessageIds(new Set());
+      setToastMessage("Download started");
+    } else {
+      setToastMessage("Nothing to download");
+    }
+  }, [messages, selectedMessageIds, usersMap]);
 
   const handleCopyClick = useCallback(async (message: Message) => {
     try {
@@ -228,6 +345,11 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     });
   }, []);
 
+  const handleSelectModeClick = useCallback((msg: Message) => {
+    setSelectedMessageIds(new Set([msg.id]));
+    setForwardSelectionMode(true);
+  }, []);
+
   // Clear toast after 3 seconds
   useEffect(() => {
     if (toastMessage) {
@@ -324,6 +446,11 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     };
   }, [conversationId]);
 
+  // Reset loaded state when conversation changes
+  useEffect(() => {
+    setMessagesLoaded(false);
+  }, [conversationId]);
+
   // Fetch messages
   useEffect(() => {
     if (!conversationId) return;
@@ -342,8 +469,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       
       const reversedMsgs = msgs.reverse();
       setMessages(reversedMsgs);
+      setMessagesLoaded(true);
       
-      // Auto-scroll if not fetching older messages
+      // Auto-scroll only if we are not fetching older messages AND we were already at the bottom
+      // or if it's the initial load. Since calculating "was at bottom" requires ref before render,
+      // a simple heuristic for Telegram-style is to scroll down if the last message was sent by the current user,
+      // or if it's the initial load (isFetchingOlder is false and limit hasn't changed).
       if (!isFetchingOlder) {
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -360,12 +491,10 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           const batch = writeBatch(db);
           unreadMsgs.forEach(m => {
             const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
-            const updatedReadBy = m.readBy.includes(currentUser.uid) ? m.readBy : [...m.readBy, currentUser.uid];
-            const updatedDeliveredTo = m.deliveredTo?.includes(currentUser.uid) ? m.deliveredTo : [...(m.deliveredTo || []), currentUser.uid];
             
             batch.update(msgRef, {
-              readBy: updatedReadBy,
-              deliveredTo: updatedDeliveredTo
+              readBy: arrayUnion(currentUser.uid),
+              deliveredTo: arrayUnion(currentUser.uid)
             });
           });
           
@@ -384,7 +513,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
             undeliveredMsgs.forEach(m => {
               const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
               batch.update(msgRef, {
-                deliveredTo: [...(m.deliveredTo || []), currentUser.uid]
+                deliveredTo: arrayUnion(currentUser.uid)
               });
             });
             batch.commit().catch(console.error);
@@ -643,58 +772,63 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   return (
     <div className="flex-1 flex w-full h-full relative overflow-hidden">
-      <div className="flex-1 flex flex-col w-full h-full bg-chat-bg relative">
+      <div className="flex-1 flex flex-col w-full h-full bg-bg-chat relative">
         {/* Forward Selection Header */}
         {forwardSelectionMode && (
-          <div className="absolute top-0 left-0 right-0 h-16 bg-accent text-accent-foreground z-20 flex items-center justify-between px-4 animate-in slide-in-from-top-4 shadow-md">
+          <div className="absolute top-0 left-0 right-0 h-16 bg-surface border-b border-border z-20 flex items-center justify-between px-3 sm:px-4 animate-in slide-in-from-top-4 shadow-sm">
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => {
                   setForwardSelectionMode(false);
                   setSelectedMessageIds(new Set());
                 }}
-                className="p-2 hover:bg-black/10 rounded-full transition-colors"
+                className="p-2 hover:bg-black/5 rounded-full transition-colors text-muted-foreground hover:text-foreground"
               >
                 <X className="w-5 h-5" />
               </button>
-              <span className="font-medium">{selectedMessageIds.size} selected</span>
+              <span className="font-medium text-foreground text-sm sm:text-base">
+                {selectedMessageIds.size} selected
+              </span>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-0 sm:space-x-1">
               <button 
-                onClick={() => {
-                  const msgsToCopy = messages
-                    .filter(m => selectedMessageIds.has(m.id))
-                    .map(m => m.text)
-                    .filter(Boolean)
-                    .join('\n\n');
-                  
-                  if (msgsToCopy) {
-                    navigator.clipboard.writeText(msgsToCopy);
-                    setToastMessage("Messages copied to clipboard");
-                  }
-                  setForwardSelectionMode(false);
-                  setSelectedMessageIds(new Set());
-                }}
+                onClick={handleBulkStar}
                 disabled={selectedMessageIds.size === 0}
-                className="p-2 hover:bg-black/10 rounded-full transition-colors disabled:opacity-50"
-                title="Copy"
+                className="p-2 hover:bg-black/5 hover:text-foreground rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground text-muted-foreground"
+                title="Star"
               >
-                <Copy className="w-5 h-5" />
+                <Star className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={selectedMessageIds.size === 0}
+                className="p-2 hover:bg-black/5 hover:text-foreground rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground text-muted-foreground"
+                title="Delete"
+              >
+                <Trash2 className="w-5 h-5" />
               </button>
               <button 
                 onClick={() => setShowForwardModal(true)}
                 disabled={selectedMessageIds.size === 0}
-                className="p-2 hover:bg-black/10 rounded-full transition-colors disabled:opacity-50"
+                className="p-2 hover:bg-black/5 hover:text-foreground rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground text-muted-foreground"
                 title="Forward"
               >
                 <Forward className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={handleBulkDownload}
+                disabled={selectedMessageIds.size === 0}
+                className="p-2 hover:bg-black/5 hover:text-foreground rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground text-muted-foreground"
+                title="Download"
+              >
+                <Download className="w-5 h-5" />
               </button>
             </div>
           </div>
         )}
 
         {/* Header */}
-        <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10">
+        <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
           {isSearching ? (
             <div className="flex-1 flex items-center bg-background rounded-xl px-3 py-1 mr-4 border border-accent/20">
               <button 
@@ -761,8 +895,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                   )}
                 </div>
                 <div>
-                  <h2 className="font-semibold text-foreground">{chatTitle}</h2>
-                  <p className="text-xs text-muted-foreground">{chatStatus}</p>
+                  <h2 className="font-bold text-foreground">{chatTitle}</h2>
+                  <p className="text-xs text-muted font-normal">{chatStatus}</p>
                 </div>
               </button>
             </div>
@@ -772,35 +906,42 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
             <div className="flex items-center space-x-2 relative">
               <button 
                 onClick={() => setShowMediaGallery(true)}
-                className="p-2 text-muted-foreground hover:bg-surface rounded-full transition-colors"
+                className="p-2 text-muted-foreground hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
                 title="Media"
               >
                 <ImageIcon className="w-5 h-5" />
               </button>
               <button 
                 onClick={() => setToastMessage("Voice calling isn't available yet")}
-                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
+                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
               >
                 <Phone className="w-5 h-5" />
               </button>
               <button 
                 onClick={() => setToastMessage("Video calling isn't available yet")}
-                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
+                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
               >
                 <Video className="w-5 h-5" />
               </button>
               <div className="relative" ref={menuRef}>
                 <button 
                   onClick={() => setShowMenu(!showMenu)}
-                  className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-surface transition-colors"
+                  className="p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-black/5 transition-colors"
                 >
                   <MoreVertical className="w-5 h-5" />
                 </button>
                 {showMenu && (
                   <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-xl shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-2">
                     <button
-                      className="w-full text-left px-4 py-2 hover:bg-background flex items-center space-x-3 transition-colors"
-                      onClick={() => {
+                      className="w-full text-left px-4 py-2 hover:bg-black/5 flex items-center space-x-3 transition-colors"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsSearching(true);
+                        setShowMenu(false);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setIsSearching(true);
                         setShowMenu(false);
                       }}
@@ -809,8 +950,15 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                       <span className="text-sm font-medium text-foreground">Search</span>
                     </button>
                     <button
-                      className="w-full text-left px-4 py-2 hover:bg-background flex items-center space-x-3 transition-colors"
-                      onClick={() => {
+                      className="w-full text-left px-4 py-2 hover:bg-black/5 flex items-center space-x-3 transition-colors"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setForwardSelectionMode(true);
+                        setShowMenu(false);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setForwardSelectionMode(true);
                         setShowMenu(false);
                       }}
@@ -836,8 +984,18 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       <div 
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative"
+        className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative bg-bg-chat"
       >
+        {messagesLoaded && messages.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="bg-surface/80 backdrop-blur-sm px-6 py-8 rounded-2xl flex flex-col items-center max-w-[280px] shadow-sm border border-border text-center">
+              <div className="text-4xl mb-4">👋</div>
+              <h3 className="text-foreground font-semibold mb-2">No messages yet</h3>
+              <p className="text-muted-foreground text-sm">Say hello and start the conversation!</p>
+            </div>
+          </div>
+        )}
+        
         {messages.map((msg, index) => {
           const currentDate = new Date(msg.timestamp);
           const previousDate = index > 0 ? new Date(messages[index - 1].timestamp) : null;
@@ -856,10 +1014,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                   isOwnMessage={false} 
                   isFirstInGroup={false}
                   isLastInGroup={false}
+                  isHighlighted={highlightedMessageId === msg.id}
                   isGroupChat={conversation.type === 'group'}
                   participantCount={conversation.participants.length}
                   conversationId={conversationId}
                   currentUserId={currentUser?.uid || ''}
+                  usersMap={usersMap}
                 />
               </React.Fragment>
             );
@@ -898,13 +1058,14 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 isGroupChat={conversation.type === 'group'}
                 isHighlighted={highlightedMessageId === msg.id}
                 participantCount={conversation.participants.length}
+                usersMap={usersMap}
                 onImageClick={handleImageClick}
                 selectionMode={forwardSelectionMode}
                 isSelected={selectedMessageIds.has(msg.id)}
                 onToggleSelect={handleToggleSelect}
                 onForward={handleForwardClick}
                 onCopy={handleCopyClick}
-                onSelectMode={handleForwardClick}
+                onSelectMode={handleSelectModeClick}
                 onReact={handleReact}
                 onReply={handleReply}
                 onEdit={handleEditMessage}
@@ -930,7 +1091,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       />
     </div>
 
-      {/* Modals & Panels */}
+    {/* Modals & Panels */}
       {showForwardModal && (
         <ForwardModal 
           selectedMessages={messages.filter(m => selectedMessageIds.has(m.id))}
@@ -943,6 +1104,40 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
             setToastMessage(`Forwarded to ${count} chat${count !== 1 ? 's' : ''}`);
           }}
         />
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 animate-in fade-in">
+          <div className="bg-surface rounded-2xl w-full max-w-sm shadow-xl border border-border animate-in zoom-in-95 overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-foreground mb-2">Delete {selectedMessageIds.size} messages?</h3>
+              <p className="text-sm text-muted-foreground mb-6">
+                Are you sure you want to delete {selectedMessageIds.size} selected message{selectedMessageIds.size !== 1 ? 's' : ''}?
+              </p>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => handleBulkDelete('everyone')}
+                  className="w-full py-3 px-4 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl transition-colors"
+                >
+                  Delete for everyone
+                </button>
+                <button
+                  onClick={() => handleBulkDelete('me')}
+                  className="w-full py-3 px-4 bg-black/5 hover:bg-black/10 text-foreground font-medium rounded-xl transition-colors"
+                >
+                  Delete for me
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-full py-3 px-4 hover:bg-black/5 text-foreground font-medium rounded-xl transition-colors mt-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     {/* Group Info Panel */}

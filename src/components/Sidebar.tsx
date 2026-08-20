@@ -251,7 +251,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   const activeUserProfile = currentUser && usersMap[currentUser.uid] ? usersMap[currentUser.uid] : userProfile;
 
   return (
-    <div className="w-full h-full flex flex-col bg-surface">
+    <div className="w-full h-full flex flex-col bg-bg-sidebar border-r border-border">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div 
@@ -305,9 +305,14 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
             placeholder="Search messages"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all"
+            className="w-full pl-9 pr-4 py-2 bg-bg-app border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all"
           />
         </div>
+        {searchQuery.trim().length > 0 && (
+          <p className="text-[10px] text-muted-foreground mt-2 px-1 text-center">
+            Searching recent messages only
+          </p>
+        )}
       </div>
 
       {/* Conversation List */}
@@ -354,7 +359,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                           className={`w-full flex items-center p-3 rounded-xl transition-all ${
                             isActive 
                               ? 'bg-accent/10 text-foreground' 
-                              : 'hover:bg-surface-hover text-muted-foreground'
+                              : 'hover:bg-black/5 text-muted-foreground'
                           }`}
                         >
                           <div className="relative flex-shrink-0">
@@ -383,7 +388,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                               )}
                             </div>
                             <div className="flex items-center justify-between">
-                              <p className={`text-xs truncate mr-2 ${unreadCount > 0 ? 'text-foreground font-medium' : 'text-muted'}`}>
+                              <p className={`text-xs truncate mr-2 ${unreadCount > 0 ? 'text-foreground font-bold' : 'text-muted'}`}>
                                 {convo.lastMessage || 'No messages yet'}
                               </p>
                               {unreadCount > 0 && (
@@ -409,7 +414,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                     <li key={user.uid}>
                       <button
                         onClick={() => handleStartDirectChat(user)}
-                        className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-surface-hover text-muted-foreground"
+                        className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-black/5 text-muted-foreground"
                       >
                         <div className="relative flex-shrink-0">
                           <img src={user.photoURL} alt={user.displayName} className="w-12 h-12 rounded-full object-cover" />
@@ -443,7 +448,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                       <li key={message.id}>
                         <button
                           onClick={() => onSelectConversation(conversationId, message.id)}
-                          className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-surface-hover text-muted-foreground"
+                          className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-black/5 text-muted-foreground"
                         >
                           <div className="relative flex-shrink-0">
                             {isGroup ? (

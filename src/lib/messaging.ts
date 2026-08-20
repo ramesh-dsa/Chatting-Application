@@ -1,4 +1,4 @@
-import { getMessaging, getToken, onMessage, onTokenRefresh, type MessagePayload } from 'firebase/messaging';
+import { getMessaging, getToken, onMessage, type MessagePayload } from 'firebase/messaging';
 import { app } from './firebase';
 
 const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined;
@@ -42,10 +42,4 @@ export function onForegroundMessage(handler: (payload: MessagePayload) => void):
   const m = getMessagingInstance();
   if (!m) return null;
   return onMessage(m, handler);
-}
-
-export function onTokenRefresh(handler: (token: string) => void): (() => void) | null {
-  const m = getMessagingInstance();
-  if (!m) return null;
-  return onTokenRefresh(m, handler);
 }

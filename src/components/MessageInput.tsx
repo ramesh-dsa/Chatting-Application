@@ -310,7 +310,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
   // ---------------------------------
 
   return (
-    <div className="w-full flex-shrink-0 px-3 pb-3 pt-2 bg-transparent z-10 relative">
+    <div className="w-full flex-shrink-0 px-3 py-2 bg-surface border-t border-border z-10 relative">
       
       {/* Hidden File Inputs */}
       <input 
@@ -401,7 +401,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-end bg-white rounded-3xl shadow-sm px-1.5 py-1">
+      <form onSubmit={handleSubmit} className="flex items-end bg-background rounded-3xl px-1.5 py-1 border border-border focus-within:ring-1 focus-within:ring-accent focus-within:border-accent transition-all">
         
         {/* Left Side: Attachments and Emoji */}
         {!isRecording && (
@@ -409,7 +409,10 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
             {/* Attachment Menu */}
             <div className="relative" ref={attachMenuRef}>
               {showAttachMenu && (
-                <div className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-white shadow-xl rounded-xl border border-border py-2 w-48 animate-in fade-in slide-in-from-bottom-2">
+                <div 
+                  className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-white shadow-xl rounded-xl border border-border py-2 w-48 animate-in fade-in slide-in-from-bottom-2"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
                   <button 
                     type="button"
                     onClick={() => imageInputRef.current?.click()}
@@ -521,7 +524,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
             }}
             rows={1}
             placeholder="Type a message"
-            className="flex-1 bg-transparent border-none px-3 py-3 text-[15px] text-foreground focus:outline-none placeholder:text-muted-foreground/70 resize-none overflow-y-auto min-h-[44px] max-h-[150px] leading-relaxed m-0"
+            className="flex-1 bg-transparent border-none px-3 py-3 text-[15px] text-foreground focus:outline-none placeholder:text-muted resize-none overflow-y-auto min-h-[44px] max-h-[150px] leading-relaxed m-0"
             disabled={isSending || uploadProgress != null}
           />
         )}

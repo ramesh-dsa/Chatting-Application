@@ -43,7 +43,7 @@ export default function MediaGalleryModal({ conversationId, currentUserId, onClo
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-surface w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-surface w-[95vw] sm:w-[90vw] md:max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="bg-accent/10 p-1.5 rounded-lg text-accent">

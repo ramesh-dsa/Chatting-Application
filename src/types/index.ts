@@ -58,6 +58,7 @@ export interface Message {
   replyToText?: string; // Denormalized snippet of the replied message
   replyToSenderName?: string; // Denormalized sender name of the replied message
   edited?: boolean;
+  starredBy?: string[]; // Array of UIDs who starred the message
   editedAt?: number;
   deletedForEveryone?: boolean;
   deletedFor?: string[]; // UIDs who deleted this message "for me"

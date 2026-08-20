@@ -23,6 +23,7 @@ interface MessageBubbleProps {
   onCopy?: (message: Message) => void;
   onSelectMode?: (message: Message) => void;
   onReact?: (messageId: string, emoji: string) => void;
+  usersMap?: Record<string, UserProfile>;
   onReply?: (message: Message) => void;
   onEdit?: (messageId: string, newText: string) => void;
   onDelete?: (messageId: string, mode: 'me' | 'everyone') => void;
@@ -47,6 +48,7 @@ const MessageBubble = function MessageBubble({
   onCopy,
   onSelectMode,
   onReact,
+  usersMap,
   onReply,
   onEdit,
   onDelete,
@@ -70,24 +72,24 @@ const MessageBubble = function MessageBubble({
     );
   }
 
-  // WhatsApp style corner radius grouping logic
-  let radiusClass = 'rounded-2xl';
+  // Telegram style corner radius grouping logic
+  let radiusClass = 'rounded-[12px]';
   if (isOwnMessage) {
-    if (isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-2xl rounded-tr-md rounded-br-sm';
-    else if (!isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-2xl rounded-tr-sm rounded-br-sm';
-    else if (!isFirstInGroup && isLastInGroup) radiusClass = 'rounded-2xl rounded-tr-sm';
-    else radiusClass = 'rounded-2xl rounded-br-sm'; // alone message
+    if (isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-[12px] rounded-tr-[4px] rounded-br-[4px]';
+    else if (!isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-[12px] rounded-tr-[4px] rounded-br-[4px]';
+    else if (!isFirstInGroup && isLastInGroup) radiusClass = 'rounded-[12px] rounded-tr-[4px]';
+    else radiusClass = 'rounded-[12px] rounded-br-[4px]'; // alone message
   } else {
-    if (isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-2xl rounded-tl-md rounded-bl-sm';
-    else if (!isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-2xl rounded-tl-sm rounded-bl-sm';
-    else if (!isFirstInGroup && isLastInGroup) radiusClass = 'rounded-2xl rounded-tl-sm';
-    else radiusClass = 'rounded-2xl rounded-bl-sm'; // alone message
+    if (isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-[12px] rounded-tl-[4px] rounded-bl-[4px]';
+    else if (!isFirstInGroup && !isLastInGroup) radiusClass = 'rounded-[12px] rounded-tl-[4px] rounded-bl-[4px]';
+    else if (!isFirstInGroup && isLastInGroup) radiusClass = 'rounded-[12px] rounded-tl-[4px]';
+    else radiusClass = 'rounded-[12px] rounded-bl-[4px]'; // alone message
   }
 
   if (message.deletedForEveryone) {
     return (
       <div className={`flex w-full mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-sm ${radiusClass} ${isOwnMessage ? 'bg-[#d9fdd3]' : 'bg-surface border border-border'}`}>
+        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${radiusClass} ${isOwnMessage ? 'bg-bg-msg-sent' : 'bg-surface'}`}>
           🚫 This message was deleted
         </div>
       </div>
@@ -97,7 +99,7 @@ const MessageBubble = function MessageBubble({
   if (message.deletedFor?.includes(currentUserId)) {
     return (
       <div className={`flex w-full mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-sm ${radiusClass} ${isOwnMessage ? 'bg-[#d9fdd3]' : 'bg-surface border border-border'}`}>
+        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${radiusClass} ${isOwnMessage ? 'bg-bg-msg-sent' : 'bg-surface'}`}>
           🚫 You deleted this message
         </div>
       </div>
@@ -123,7 +125,9 @@ const MessageBubble = function MessageBubble({
 
   const handleBubbleClick = () => {
     if (selectionMode) {
-      onToggleSelect?.(message.id);
+      if (message.type !== 'poll') {
+        onToggleSelect?.(message.id);
+      }
     } else {
       setShowMenu(!showMenu);
     }
@@ -141,16 +145,20 @@ const MessageBubble = function MessageBubble({
   return (
     <div className={`flex w-full ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-2' : ''}`}>
       {selectionMode && (
-        <div className="flex items-center justify-center mr-3 mt-auto mb-2" onClick={() => onToggleSelect?.(message.id)}>
-          <div className="relative flex items-center justify-center w-5 h-5 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={isSelected || false}
-              readOnly
-              className="appearance-none w-5 h-5 border-2 border-muted rounded-full checked:bg-accent checked:border-accent transition-all cursor-pointer peer"
-            />
-            <CheckIcon className="w-3 h-3 text-accent-foreground absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
-          </div>
+        <div className="flex items-center justify-center mr-3 mt-auto mb-2" onClick={() => message.type !== 'poll' && onToggleSelect?.(message.id)}>
+          {message.type !== 'poll' ? (
+            <div className="relative flex items-center justify-center w-5 h-5 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={isSelected || false}
+                readOnly
+                className="appearance-none w-5 h-5 border-2 border-muted rounded-full checked:bg-accent checked:border-accent transition-all cursor-pointer peer"
+              />
+              <CheckIcon className="w-3 h-3 text-accent-foreground absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
+            </div>
+          ) : (
+            <div className="w-5 h-5" />
+          )}
         </div>
       )}
       <div 
@@ -182,12 +190,12 @@ const MessageBubble = function MessageBubble({
           <div 
             id={`msg-${message.id}`}
             onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
-            className={`px-3 pt-2 pb-1.5 relative group shadow-sm transition-colors duration-500 ${radiusClass} ${
+            className={`px-3 pt-2 pb-1.5 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
-                  ? 'bg-[#d9fdd3] text-[#111b21]' 
-                  : 'bg-surface border border-border text-foreground'
+                  ? 'bg-bg-msg-sent text-foreground' 
+                  : 'bg-surface text-foreground'
             }`}
           >
             {/* Reply Quote */}
@@ -297,6 +305,7 @@ const MessageBubble = function MessageBubble({
                   message={message}
                   conversationId={conversationId}
                   currentUserId={currentUserId}
+                  usersMap={usersMap}
                 />
               </div>
             )}
@@ -311,7 +320,7 @@ const MessageBubble = function MessageBubble({
               </span>
               {isOwnMessage && (
                 <span className="ml-1 flex items-center">
-                  {tickState === 'sent' && <CheckIcon className="w-3.5 h-3.5 text-muted-foreground/60" />}
+                  {tickState === 'sent' && <CheckIcon className="w-3.5 h-3.5 text-blue-500" />}
                   {tickState === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-muted-foreground/60" />}
                   {tickState === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-500" />}
                 </span>
@@ -367,18 +376,22 @@ const MessageBubble = function MessageBubble({
             {/* Dropdown Menu */}
             {showMenu && (
               <div className="absolute top-6 right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-50 min-w-[120px]">
+                {message.type !== 'poll' && (
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onSelectMode?.(message);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                  >
+                    <CheckSquare className="w-4 h-4" />
+                    Select
+                  </button>
+                )}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(false);
-                    onSelectMode?.(message);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
-                >
-                  <CheckSquare className="w-4 h-4" />
-                  Select
-                </button>
-                <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowMenu(false);
@@ -391,6 +404,7 @@ const MessageBubble = function MessageBubble({
                 </button>
                 {isOwnMessage && message.type === 'text' && !message.attachmentUrl && (Date.now() - message.timestamp) < 15 * 60 * 1000 && (
                   <button
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowMenu(false);
@@ -404,6 +418,7 @@ const MessageBubble = function MessageBubble({
                   </button>
                 )}
                 <button
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowMenu(false);
@@ -418,6 +433,7 @@ const MessageBubble = function MessageBubble({
                 </button>
                 {isOwnMessage && (
                   <button
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowMenu(false);
@@ -433,6 +449,7 @@ const MessageBubble = function MessageBubble({
                 )}
                 {message.type !== 'poll' && (
                   <button
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowMenu(false);
@@ -446,6 +463,7 @@ const MessageBubble = function MessageBubble({
                 )}
                 {message.type !== 'poll' && (
                   <button
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowMenu(false);
