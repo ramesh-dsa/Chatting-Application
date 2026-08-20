@@ -22,6 +22,20 @@ export interface Conversation {
   lastMessageTimestamp?: number;
   updatedAt: number;
   unreadCounts?: Record<string, number>;
+  typing?: Record<string, number>; // uid -> last typing timestamp (ms)
+}
+
+export interface PollOption {
+  id: string;
+  text: string;
+  voters: string[];
+}
+
+export interface PollData {
+  question: string;
+  options: PollOption[];
+  multipleAnswers: boolean;
+  isClosed?: boolean;
 }
 
 export interface Message {
@@ -36,6 +50,15 @@ export interface Message {
   timestamp: number;
   readBy: string[]; // Array of UIDs
   deliveredTo?: string[]; // Array of UIDs
-  type: 'text' | 'image' | 'video' | 'document' | 'system' | 'voice';
+  type: 'text' | 'image' | 'video' | 'document' | 'system' | 'voice' | 'poll';
   forwarded?: boolean;
+  pollData?: PollData;
+  reactions?: Record<string, string[]>; // emoji -> array of UIDs who reacted
+  replyTo?: string; // ID of the message being replied to
+  replyToText?: string; // Denormalized snippet of the replied message
+  replyToSenderName?: string; // Denormalized sender name of the replied message
+  edited?: boolean;
+  editedAt?: number;
+  deletedForEveryone?: boolean;
+  deletedFor?: string[]; // UIDs who deleted this message "for me"
 }

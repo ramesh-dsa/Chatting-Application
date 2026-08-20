@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc, limit, writeBatch } from 'firebase/firestore';
 import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
-import { signOut } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile, Message } from '../types';
@@ -57,6 +56,13 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     activeConversationIdRef.current = activeConversationId;
   }, [activeConversationId]);
 
+  const lastMsgTsRef = useRef<Record<string, number>>({});
+
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+
+  const conversationIds = conversations.map(c => c.id).sort().join(',');
+
   const hasNotificationPermissionRef = useRef(hasNotificationPermission);
   useEffect(() => {
     hasNotificationPermissionRef.current = hasNotificationPermission;
@@ -83,15 +89,20 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
         if (change.type === 'modified') {
           const convo = change.doc.data() as Conversation;
           const isCurrentlyActive = activeConversationIdRef.current === change.doc.id && document.hasFocus();
+          const isNewMessage = convo.lastMessageTimestamp && convo.lastMessageTimestamp !== lastMsgTsRef.current[change.doc.id];
+          lastMsgTsRef.current[change.doc.id] = convo.lastMessageTimestamp || 0;
           
-          if (!isCurrentlyActive && hasNotificationPermissionRef.current) {
+          if (!isCurrentlyActive && hasNotificationPermissionRef.current && isNewMessage) {
             new Notification('New Message', {
               body: convo.lastMessage || 'You received a new message',
-              icon: '/vite.svg'
+              icon: '/favicon.svg'
             });
           }
         }
       });
+    }, (error) => {
+      console.error("Conversations query error:", error);
+      setIsLoading(false);
     });
 
     return () => unsubscribe();
@@ -101,40 +112,40 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   // and handle message delivery receipts (double gray ticks)
   useEffect(() => {
     if (!currentUser?.uid) return;
-    
-    import('firebase/firestore').then(({ limit, writeBatch, doc }) => {
-      const unsubscribes = conversations.map(convo => {
-        const q = query(
-          collection(db, `conversations/${convo.id}/messages`),
-          orderBy('timestamp', 'desc'),
-          limit(50)
+
+    const convoList = conversationsRef.current;
+    const unsubscribes = convoList.map(convo => {
+      const q = query(
+        collection(db, `conversations/${convo.id}/messages`),
+        orderBy('timestamp', 'desc'),
+        limit(50)
+      );
+      return onSnapshot(q, snapshot => {
+        const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Message));
+        setMessagesCache(prev => ({ ...prev, [convo.id]: msgs.slice().reverse() }));
+
+        // Process delivery receipts: mark undelivered messages from others as delivered
+        const undeliveredMsgs = msgs.filter(m => 
+          m.type !== 'system' && 
+          m.senderId !== currentUser.uid && 
+          !m.deliveredTo?.includes(currentUser.uid)
         );
-        return onSnapshot(q, snapshot => {
-          const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Message));
-          setMessagesCache(prev => ({ ...prev, [convo.id]: msgs.slice().reverse() }));
 
-          // Process delivery receipts: mark undelivered messages from others as delivered
-          const undeliveredMsgs = msgs.filter(m => 
-            m.type !== 'system' && 
-            m.senderId !== currentUser.uid && 
-            !m.deliveredTo?.includes(currentUser.uid)
-          );
-
-          if (undeliveredMsgs.length > 0) {
-            const batch = writeBatch(db);
-            undeliveredMsgs.forEach(m => {
-              const msgRef = doc(db, `conversations/${convo.id}/messages`, m.id);
-              batch.update(msgRef, {
-                deliveredTo: [...(m.deliveredTo || []), currentUser.uid]
-              });
+        if (undeliveredMsgs.length > 0) {
+          const batch = writeBatch(db);
+          undeliveredMsgs.forEach(m => {
+            const msgRef = doc(db, `conversations/${convo.id}/messages`, m.id);
+            batch.update(msgRef, {
+              deliveredTo: [...(m.deliveredTo || []), currentUser.uid]
             });
-            batch.commit().catch(console.error);
-          }
-        });
+          });
+          batch.commit().catch(console.error);
+        }
       });
-      return () => unsubscribes.forEach(unsub => unsub());
     });
-  }, [conversations.map(c => c.id).join(','), currentUser?.uid]);
+
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [conversationIds, currentUser?.uid]);
 
   const handleLogout = () => {
     auth.signOut();
@@ -426,7 +437,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                     const { displayName, photoURL, isGroup } = getConvoDisplayInfo(conversation);
                     const senderName = message.senderId === userProfile?.uid 
                       ? 'You' 
-                      : (usersMap[message.senderId]?.displayName || 'Unknown');
+                      : (message.senderId ? (usersMap[message.senderId]?.displayName || 'Unknown') : 'Unknown');
 
                     return (
                       <li key={message.id}>

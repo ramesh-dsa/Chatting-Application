@@ -64,7 +64,7 @@ export default function Login() {
     try {
       await sendPasswordResetEmail(auth, email);
       setResetMessage(`If an account exists for ${email}, a reset link has been sent.`);
-    } catch (err: any) {
+    } catch {
       // Show generic message even on error to avoid leaking email existence
       setResetMessage(`If an account exists for ${email}, a reset link has been sent.`);
     } finally {

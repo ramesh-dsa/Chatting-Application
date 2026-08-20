@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, Camera, Edit2, Check } from 'lucide-react';
-import { db, storage, auth } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
@@ -17,7 +17,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
   const [newName, setNewName] = useState(userProfile?.displayName || '');
   
   const [isEditingAbout, setIsEditingAbout] = useState(false);
-  const [newAbout, setNewAbout] = useState(userProfile?.about || 'Hey there! I am using Chat.');
+  const [newAbout, setNewAbout] = useState(userProfile?.statusMessage || 'Hey there! I am using Chat.');
   
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
     if (!newAbout.trim()) return;
     
     await updateDoc(doc(db, 'users', userProfile.uid), {
-      about: newAbout.trim()
+      statusMessage: newAbout.trim()
     });
     setIsEditingAbout(false);
   };
@@ -229,7 +229,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
             </div>
           ) : (
             <div className="flex items-center justify-between">
-              <span className="text-foreground font-medium">{userProfile.about || 'Hey there! I am using Chat.'}</span>
+              <span className="text-foreground font-medium">{userProfile.statusMessage || 'Hey there! I am using Chat.'}</span>
               <button onClick={() => setIsEditingAbout(true)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
                 <Edit2 className="w-4 h-4" />
               </button>

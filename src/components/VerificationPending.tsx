@@ -51,7 +51,7 @@ export default function VerificationPending({ user }: VerificationPendingProps) 
       } else {
         setError('Email is not verified yet. Please check your inbox and click the link.');
       }
-    } catch (err: any) {
+    } catch {
       setError('Error checking verification status.');
     } finally {
       setIsChecking(false);

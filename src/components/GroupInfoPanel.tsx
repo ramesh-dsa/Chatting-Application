@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Camera, Edit2, UserPlus, LogOut, Check, Shield, ShieldOff } from 'lucide-react';
-import { db, storage } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { doc, updateDoc, arrayRemove, arrayUnion, collection, getDocs, addDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile } from '../types';
@@ -139,6 +139,11 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
     if (!confirm(`Remove ${name} from group?`)) return;
 
     const isRemovedAdmin = conversation.admins?.includes(uid);
+    if (isRemovedAdmin && conversation.admins && conversation.admins.length <= 1) {
+      alert("A group must have at least one admin. Demote the admin first.");
+      return;
+    }
+
     const updates: any = {
       participants: arrayRemove(uid),
       updatedAt: Date.now()

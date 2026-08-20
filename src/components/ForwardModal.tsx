@@ -90,7 +90,7 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
         let lastMessageText = '';
         
         for (const msg of messagesToForward) {
-          const { id, readBy, deliveredTo, ...msgData } = msg;
+          const { id: _id, readBy: _readBy, deliveredTo: _deliveredTo, ...msgData } = msg;
           
           await addDoc(collection(db, `conversations/${targetChatId}/messages`), {
             ...msgData,
@@ -105,6 +105,8 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
           else if (msg.type === 'image') lastMessageText = '📷 Photo';
           else if (msg.type === 'video') lastMessageText = '🎥 Video';
           else if (msg.type === 'document') lastMessageText = '📄 Document';
+          else if (msg.type === 'poll') lastMessageText = '📊 Poll';
+          else if (msg.type === 'voice') lastMessageText = '🎤 Voice Message';
         }
 
         // Determine who needs unread count increments
@@ -121,6 +123,7 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
         // Update the target conversation document
         await updateDoc(doc(db, 'conversations', targetChatId), {
           lastMessage: lastMessageText,
+          lastMessageTimestamp: Date.now(),
           updatedAt: Date.now(),
           ...unreadIncrements
         });

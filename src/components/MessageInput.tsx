@@ -1,18 +1,26 @@
 import { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { Send, Smile, Plus, Image as ImageIcon, FileText, X, Mic, Trash2, ArrowLeft, Lock, ChevronUp } from 'lucide-react';
+import { Send, Smile, Plus, Image as ImageIcon, FileText, X, Mic, Trash2, ArrowLeft, Lock, ChevronUp, BarChart2 } from 'lucide-react';
+import CreatePollModal from './CreatePollModal';
+import type { Message, PollData } from '../types';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
 interface MessageInputProps {
-  onSendMessage: (text: string, file?: File | Blob | null, duration?: number) => Promise<void>;
+  onSendMessage: (text: string, file?: File | Blob | null, duration?: number, replyToMessage?: Message | null) => Promise<void>;
+  onSendPoll?: (pollData: PollData) => Promise<void>;
   uploadProgress?: number | null;
+  replyingTo?: Message | null;
+  onCancelReply?: () => void;
+  onTyping?: () => void;
+  onStopTyping?: () => void;
 }
 
-export default function MessageInput({ onSendMessage, uploadProgress }: MessageInputProps) {
+export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress, replyingTo, onCancelReply, onTyping, onStopTyping }: MessageInputProps) {
   const [text, setText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -31,7 +39,7 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   
@@ -39,6 +47,30 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
     isRecording: false,
     isLocked: false,
   });
+
+  const onTypingRef = useRef(onTyping);
+  onTypingRef.current = onTyping;
+  const onStopTypingRef = useRef(onStopTyping);
+  onStopTypingRef.current = onStopTyping;
+  const lastTypingSentRef = useRef(0);
+
+  // Throttled typing indicator (at most once every 2s)
+  useEffect(() => {
+    if (text.trim()) {
+      const now = Date.now();
+      if (now - lastTypingSentRef.current > 2000) {
+        lastTypingSentRef.current = now;
+        onTypingRef.current?.();
+      }
+    } else {
+      onStopTypingRef.current?.();
+    }
+  }, [text]);
+
+  // Clear typing status on unmount
+  useEffect(() => {
+    return () => onStopTypingRef.current?.();
+  }, []);
 
   useEffect(() => {
     recordingStateRef.current = { isRecording, isLocked };
@@ -106,13 +138,13 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
     const messageText = text.trim();
     const currentFile = selectedFile;
 
-    setText('');
-    setSelectedFile(null);
-    setPreviewUrl(null);
     setIsSending(true);
 
     try {
-      await onSendMessage(messageText, currentFile);
+      await onSendMessage(messageText, currentFile, undefined, replyingTo);
+      onStopTypingRef.current?.();
+      lastTypingSentRef.current = 0;
+      setText('');
       if (inputRef.current) {
         inputRef.current.style.height = 'auto';
       }
@@ -195,8 +227,10 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
   };
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.onstop = null;
+      recorder.stop();
     }
     stopMediaTracks();
     cleanupRecordingState();
@@ -204,15 +238,21 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
 
   const sendRecording = () => {
     const currentDuration = recordingTime;
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' });
-        if (currentDuration > 0) {
-          onSendMessage('', audioBlob, currentDuration).catch(console.error);
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
+        if (currentDuration > 0 && audioBlob.size > 0) {
+          try {
+            await onSendMessage('', audioBlob, currentDuration);
+          } catch (err) {
+            console.error("Failed to send voice message:", err);
+          }
         }
         stopMediaTracks();
       };
-      mediaRecorderRef.current.stop();
+      recorder.stop();
     }
     cleanupRecordingState();
   };
@@ -223,7 +263,6 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
     setIsLocked(false);
     setSlideOffset(0);
     setRecordingTime(0);
-    audioChunksRef.current = [];
     mediaRecorderRef.current = null;
     window.removeEventListener('pointermove', handlePointerMove);
     window.removeEventListener('pointerup', handlePointerUp);
@@ -252,7 +291,7 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
     }
   };
 
-  const handlePointerUp = (e: PointerEvent) => {
+  const handlePointerUp = () => {
     if (!recordingStateRef.current.isRecording) return;
     
     if (!recordingStateRef.current.isLocked) {
@@ -344,6 +383,24 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
         </div>
       )}
 
+      {replyingTo && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-3xl shadow-sm mb-1 border-l-4 border-accent">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-accent truncate">Replying</p>
+            <p className="text-sm text-muted-foreground truncate">
+              {replyingTo.attachmentUrl ? '[Attachment]' : replyingTo.text || ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            className="p-1.5 rounded-full hover:bg-black/5 text-muted-foreground transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex items-end bg-white rounded-3xl shadow-sm px-1.5 py-1">
         
         {/* Left Side: Attachments and Emoji */}
@@ -372,6 +429,19 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
                       <FileText className="w-5 h-5" />
                     </div>
                     <span className="text-sm font-medium">Document</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      setShowPollModal(true);
+                    }}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-black/5 transition-colors text-left"
+                  >
+                    <div className="bg-green-100 text-green-600 p-2 rounded-full">
+                      <BarChart2 className="w-5 h-5" />
+                    </div>
+                    <span className="text-sm font-medium">Poll</span>
                   </button>
                 </div>
               )}
@@ -499,8 +569,16 @@ export default function MessageInput({ onSendMessage, uploadProgress }: MessageI
           )}
         </div>
       </form>
+
+      <CreatePollModal 
+        isOpen={showPollModal}
+        onClose={() => setShowPollModal(false)}
+        onCreatePoll={async (pollData) => {
+          if (onSendPoll) {
+            await onSendPoll(pollData);
+          }
+        }}
+      />
     </div>
   );
 }
-
-

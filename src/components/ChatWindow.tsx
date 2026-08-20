@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, getDoc, increment, writeBatch, limit } from 'firebase/firestore';
-import { ref } from 'firebase/storage';
-import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, Copy, CheckSquare } from 'lucide-react';
-import { db, storage } from '../lib/firebase';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, increment, writeBatch, limit, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, Copy, CheckSquare, Image as ImageIcon } from 'lucide-react';
+import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import type { Message, Conversation, UserProfile } from '../types';
+import type { Message, Conversation, UserProfile, PollData } from '../types';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import GroupInfoPanel from './GroupInfoPanel';
-import ImagePreviewModal from './ImagePreviewModal';
 import ForwardModal from './ForwardModal';
+import MediaGalleryModal from './MediaGalleryModal';
+import ImagePreviewModal from './ImagePreviewModal';
 import { copyImageToClipboard } from '../lib/clipboard';
 import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
 
@@ -39,6 +39,19 @@ interface ChatWindowProps {
 
 export default function ChatWindow({ conversationId, onBack, initialHighlightId, usersMap }: ChatWindowProps) {
   const { currentUser } = useAuth();
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleBackOnAccessError = () => {
+    if (navTimerRef.current) return;
+    setToastMessage("You no longer have access to this conversation");
+    navTimerRef.current = setTimeout(() => {
+      navTimerRef.current = null;
+      onBackRef.current?.();
+    }, 1500);
+  };
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -104,6 +117,103 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     setForwardSelectionMode(true);
     setSelectedMessageIds(new Set([message.id]));
   }, []);
+
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [, setTypingTick] = useState(0);
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
+
+  const handleReact = useCallback(async (messageId: string, emoji: string) => {
+    if (!currentUser) return;
+    const msgRef = doc(db, `conversations/${conversationId}/messages`, messageId);
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    try {
+      const updates: Record<string, any> = {};
+      const alreadyReactedToThis = (msg.reactions?.[emoji] || []).includes(currentUser.uid);
+
+      // Remove from all emojis first to enforce one reaction per user
+      if (msg.reactions) {
+        Object.keys(msg.reactions).forEach(e => {
+          if (msg.reactions![e].includes(currentUser.uid)) {
+            updates[`reactions.${e}`] = arrayRemove(currentUser.uid);
+          }
+        });
+      }
+
+      // If they clicked a new emoji (or one they hadn't selected), add it
+      if (!alreadyReactedToThis) {
+        updates[`reactions.${emoji}`] = arrayUnion(currentUser.uid);
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(msgRef, updates);
+      }
+    } catch (err) {
+      console.error("Failed to update reaction:", err);
+    }
+  }, [currentUser, conversationId, messages]);
+
+  const handleReply = useCallback((message: Message) => {
+    setReplyingTo(message);
+  }, []);
+
+  const handleEditMessage = useCallback(async (messageId: string, newText: string) => {
+    if (!currentUser) return;
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    const msgRef = doc(db, `conversations/${conversationId}/messages`, messageId);
+    try {
+      await updateDoc(msgRef, { text: trimmed, edited: true, editedAt: Date.now() });
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+    }
+  }, [currentUser, conversationId]);
+
+  const handleDeleteMessage = useCallback(async (messageId: string, mode: 'me' | 'everyone') => {
+    if (!currentUser) return;
+    const msgRef = doc(db, `conversations/${conversationId}/messages`, messageId);
+    try {
+      if (mode === 'everyone') {
+        await updateDoc(msgRef, {
+          deletedForEveryone: true,
+          text: '',
+          attachmentUrl: '',
+          attachmentType: '',
+          attachmentName: ''
+        });
+      } else {
+        await updateDoc(msgRef, { deletedFor: arrayUnion(currentUser.uid) });
+      }
+    } catch (err) {
+      console.error("Failed to delete message:", err);
+    }
+  }, [currentUser, conversationId]);
+
+  const handleTyping = useCallback(() => {
+    if (!currentUser || !conversationId) return;
+    updateDoc(doc(db, 'conversations', conversationId), {
+      [`typing.${currentUser.uid}`]: Date.now()
+    }).catch(console.error);
+  }, [currentUser, conversationId]);
+
+  const handleStopTyping = useCallback(() => {
+    if (!currentUser || !conversationId) return;
+    updateDoc(doc(db, 'conversations', conversationId), {
+      [`typing.${currentUser.uid}`]: deleteField()
+    }).catch(console.error);
+  }, [currentUser, conversationId]);
+
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [conversationId]);
+
+  // Re-evaluate the typing indicator's 3s expiry even without new snapshots
+  useEffect(() => {
+    if (!conversation?.typing) return;
+    const id = setInterval(() => setTypingTick(t => t + 1), 2000);
+    return () => clearInterval(id);
+  }, [conversation?.typing]);
 
   const handleToggleSelect = useCallback((messageId: string) => {
     setSelectedMessageIds(prev => {
@@ -200,9 +310,18 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         const convoData = snapshot.data() as Omit<Conversation, 'id'>;
         setConversation({ ...convoData, id: snapshot.id } as Conversation);
       }
+    }, (error) => {
+      console.error("Conversation listener error:", error);
+      scheduleBackOnAccessError();
     });
 
-    return () => unsubConvo();
+    return () => {
+      unsubConvo();
+      if (navTimerRef.current) {
+        clearTimeout(navTimerRef.current);
+        navTimerRef.current = null;
+      }
+    };
   }, [conversationId]);
 
   // Fetch messages
@@ -272,16 +391,25 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           }
         }
       }
+    }, (error) => {
+      console.error("Messages listener error:", error);
+      scheduleBackOnAccessError();
     });
 
-    return () => unsubMessages();
+    return () => {
+      unsubMessages();
+      if (navTimerRef.current) {
+        clearTimeout(navTimerRef.current);
+        navTimerRef.current = null;
+      }
+    };
   }, [conversationId, messageLimit, currentUser?.uid]);
 
   const handleImageClick = useCallback((msg: Message) => {
     const isOwn = msg.senderId === currentUser?.uid;
     setPreviewImage({ 
       url: msg.attachmentUrl || '', 
-      senderName: isOwn ? 'You' : usersMap[msg.senderId]?.displayName || 'User', 
+      senderName: isOwn ? 'You' : (msg.senderId ? usersMap[msg.senderId]?.displayName : 'User') || 'User', 
       timestamp: msg.timestamp,
       name: msg.attachmentName || ''
     });
@@ -294,7 +422,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     }
   };
 
-  const handleSendMessage = async (text: string, file?: File | Blob | null, duration?: number) => {
+  const handleSendMessage = async (text: string, file?: File | Blob | null, duration?: number, replyToMessage?: Message | null) => {
     if (!currentUser || !conversationId) return;
 
     try {
@@ -395,6 +523,16 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         }
       }
 
+      if (replyToMessage) {
+        msgData.replyTo = replyToMessage.id;
+        msgData.replyToText = replyToMessage.attachmentUrl
+          ? `[${replyToMessage.attachmentType === 'image' ? 'Photo' : replyToMessage.attachmentType === 'video' ? 'Video' : replyToMessage.attachmentType === 'voice' ? 'Voice Message' : 'Document'}]`
+          : (replyToMessage.text || '');
+        msgData.replyToSenderName = replyToMessage.senderId === currentUser.uid
+          ? 'You'
+          : (replyToMessage.senderId ? usersMap[replyToMessage.senderId]?.displayName : undefined);
+      }
+
       await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
 
       // Prepare unread counts increment for other participants
@@ -414,10 +552,54 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         updatedAt: Date.now(),
         ...unreadUpdates
       });
+
+      setReplyingTo(null);
     } catch (error: any) {
       setUploadProgress(null);
       setToastMessage(error.message || "Failed to send message/file");
       console.error("Error sending message:", error);
+      throw error;
+    }
+  };
+
+  const handleSendPoll = async (pollData: PollData) => {
+    if (!currentUser || !conversationId) return;
+
+    try {
+      const msgData: any = {
+        senderId: currentUser.uid,
+        text: '',
+        timestamp: Date.now(),
+        readBy: [currentUser.uid],
+        type: 'poll',
+        pollData: {
+          ...pollData,
+          isClosed: false
+        }
+      };
+
+      await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
+
+      // Prepare unread counts increment for other participants
+      const unreadUpdates: Record<string, any> = {};
+      if (conversation?.participants) {
+        conversation.participants.forEach(uid => {
+          if (uid !== currentUser.uid) {
+            unreadUpdates[`unreadCounts.${uid}`] = increment(1);
+          }
+        });
+      }
+
+      // Update the conversation's last message and unread counts
+      await updateDoc(doc(db, 'conversations', conversationId), {
+        lastMessage: '📊 Poll',
+        lastMessageTimestamp: Date.now(),
+        updatedAt: Date.now(),
+        ...unreadUpdates
+      });
+    } catch (error: any) {
+      setToastMessage(error.message || "Failed to send poll");
+      console.error("Error sending poll:", error);
       throw error;
     }
   };
@@ -439,8 +621,24 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
     const otherUser = otherUid ? usersMap[otherUid] : null;
     chatTitle = otherUser?.displayName || 'User';
-    chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.about || 'Hey there! I am using Chat.');
+    chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.statusMessage || 'Hey there! I am using Chat.');
     chatAvatar = otherUser?.photoURL || 'https://api.dicebear.com/7.x/initials/svg?seed=U';
+  }
+
+  // Typing indicator (other participants who typed within the last 3 seconds)
+  const typingUids = conversation.typing
+    ? Object.keys(conversation.typing).filter(uid => {
+        const ts = conversation.typing?.[uid];
+        return uid !== currentUser?.uid && typeof ts === 'number' && Date.now() - ts < 3000;
+      })
+    : [];
+  if (typingUids.length > 0) {
+    if (conversation.type === 'direct') {
+      chatStatus = 'typing...';
+    } else {
+      const names = typingUids.map(uid => usersMap[uid]?.displayName || 'Someone');
+      chatStatus = `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} typing...`;
+    }
   }
 
   return (
@@ -573,6 +771,13 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           {!isSearching && (
             <div className="flex items-center space-x-2 relative">
               <button 
+                onClick={() => setShowMediaGallery(true)}
+                className="p-2 text-muted-foreground hover:bg-surface rounded-full transition-colors"
+                title="Media"
+              >
+                <ImageIcon className="w-5 h-5" />
+              </button>
+              <button 
                 onClick={() => setToastMessage("Voice calling isn't available yet")}
                 className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-surface rounded-full transition-colors"
               >
@@ -653,6 +858,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                   isLastInGroup={false}
                   isGroupChat={conversation.type === 'group'}
                   participantCount={conversation.participants.length}
+                  conversationId={conversationId}
+                  currentUserId={currentUser?.uid || ''}
                 />
               </React.Fragment>
             );
@@ -685,7 +892,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               <MessageBubble 
                 message={msg} 
                 isOwnMessage={isOwn} 
-                senderProfile={isOwn ? undefined : usersMap[msg.senderId]}
+                senderProfile={isOwn ? undefined : (msg.senderId ? usersMap[msg.senderId] : undefined)}
                 isFirstInGroup={isFirstInGroup}
                 isLastInGroup={isLastInGroup}
                 isGroupChat={conversation.type === 'group'}
@@ -698,6 +905,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 onForward={handleForwardClick}
                 onCopy={handleCopyClick}
                 onSelectMode={handleForwardClick}
+                onReact={handleReact}
+                onReply={handleReply}
+                onEdit={handleEditMessage}
+                onDelete={handleDeleteMessage}
+                conversationId={conversationId}
+                currentUserId={currentUser?.uid || ''}
               />
             </React.Fragment>
           );
@@ -706,7 +919,15 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       </div>
 
       {/* Input Area */}
-      <MessageInput onSendMessage={handleSendMessage} uploadProgress={uploadProgress} />
+      <MessageInput 
+        onSendMessage={handleSendMessage} 
+        onSendPoll={handleSendPoll}
+        uploadProgress={uploadProgress} 
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        onTyping={handleTyping}
+        onStopTyping={handleStopTyping}
+      />
     </div>
 
       {/* Modals & Panels */}
@@ -736,6 +957,15 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         }}
       />
     )}
+
+    {/* Media Gallery Modal */}
+      {showMediaGallery && (
+        <MediaGalleryModal
+          conversationId={conversationId}
+          currentUserId={currentUser?.uid || ''}
+          onClose={() => setShowMediaGallery(false)}
+        />
+      )}
 
     {/* Image Preview Modal */}
     {previewImage && (

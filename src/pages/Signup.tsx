@@ -44,7 +44,7 @@ export default function Signup() {
         email: user.email,
         displayName: formData.displayName,
         photoURL: photoURL,
-        status: 'Hey there! I am using Chat App.',
+        statusMessage: 'Hey there! I am using Chat App.',
         isOnline: true,
         lastSeen: Date.now()
       });

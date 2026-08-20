@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let unsubscribeDoc: (() => void) | undefined;
+    let cancelled = false;
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -34,13 +35,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       if (unsubscribeDoc) {
         unsubscribeDoc();
+        unsubscribeDoc = undefined;
       }
 
       if (user) {
         const userRef = doc(db, 'users', user.uid);
+        const uid = user.uid;
         
         // Fetch profile and update presence in background
         getDoc(userRef).then((userSnap) => {
+          // Bail out if we unmounted or the signed-in user changed while fetching
+          if (cancelled || auth.currentUser?.uid !== uid) return;
+
           let profileData: UserProfile;
           
           if (userSnap.exists()) {
@@ -66,6 +72,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setDoc(userRef, profileData).catch(console.error);
           }
 
+          if (cancelled || auth.currentUser?.uid !== uid) return;
+
           unsubscribeDoc = onSnapshot(userRef, (snap) => {
             if (snap.exists()) {
               setUserProfile(snap.data() as UserProfile);
@@ -78,6 +86,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => {
+      cancelled = true;
       unsubscribe();
       if (unsubscribeDoc) {
         unsubscribeDoc();

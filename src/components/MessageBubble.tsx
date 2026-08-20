@@ -1,7 +1,10 @@
 import React, { memo } from 'react';
 import { format } from 'date-fns';
-import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare } from 'lucide-react';
+import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare, SmilePlus, Reply, Pencil, Trash2 } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
+import PollDisplay from './PollDisplay';
+
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,6 +22,12 @@ interface MessageBubbleProps {
   onForward?: (message: Message) => void;
   onCopy?: (message: Message) => void;
   onSelectMode?: (message: Message) => void;
+  onReact?: (messageId: string, emoji: string) => void;
+  onReply?: (message: Message) => void;
+  onEdit?: (messageId: string, newText: string) => void;
+  onDelete?: (messageId: string, mode: 'me' | 'everyone') => void;
+  conversationId: string;
+  currentUserId: string;
 }
 
 const MessageBubble = function MessageBubble({ 
@@ -36,9 +45,18 @@ const MessageBubble = function MessageBubble({
   onToggleSelect,
   onForward,
   onCopy,
-  onSelectMode
+  onSelectMode,
+  onReact,
+  onReply,
+  onEdit,
+  onDelete,
+  conversationId,
+  currentUserId
 }: MessageBubbleProps) {
   const [showMenu, setShowMenu] = React.useState(false);
+  const [showReactPicker, setShowReactPicker] = React.useState(false);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editText, setEditText] = React.useState(message.text);
 
 
 
@@ -66,6 +84,26 @@ const MessageBubble = function MessageBubble({
     else radiusClass = 'rounded-2xl rounded-bl-sm'; // alone message
   }
 
+  if (message.deletedForEveryone) {
+    return (
+      <div className={`flex w-full mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-sm ${radiusClass} ${isOwnMessage ? 'bg-[#d9fdd3]' : 'bg-surface border border-border'}`}>
+          🚫 This message was deleted
+        </div>
+      </div>
+    );
+  }
+
+  if (message.deletedFor?.includes(currentUserId)) {
+    return (
+      <div className={`flex w-full mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-sm ${radiusClass} ${isOwnMessage ? 'bg-[#d9fdd3]' : 'bg-surface border border-border'}`}>
+          🚫 You deleted this message
+        </div>
+      </div>
+    );
+  }
+
   const marginBottom = isLastInGroup ? 'mb-4' : 'mb-[2px]';
 
   // Calculate message status ticks for own messages
@@ -83,7 +121,7 @@ const MessageBubble = function MessageBubble({
     }
   }
 
-  const handleBubbleClick = (e: React.MouseEvent) => {
+  const handleBubbleClick = () => {
     if (selectionMode) {
       onToggleSelect?.(message.id);
     } else {
@@ -143,7 +181,7 @@ const MessageBubble = function MessageBubble({
           
           <div 
             id={`msg-${message.id}`}
-            onMouseLeave={() => setShowMenu(false)}
+            onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
             className={`px-3 pt-2 pb-1.5 relative group shadow-sm transition-colors duration-500 ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
@@ -152,6 +190,14 @@ const MessageBubble = function MessageBubble({
                   : 'bg-surface border border-border text-foreground'
             }`}
           >
+            {/* Reply Quote */}
+            {message.replyTo && (
+              <div className={`mb-1.5 px-2 py-1 rounded-md border-l-2 ${isOwnMessage ? 'bg-black/5 border-emerald-600' : 'bg-black/5 border-accent'}`}>
+                <p className="text-xs font-semibold text-emerald-600 truncate">{message.replyToSenderName || 'Message'}</p>
+                <p className="text-xs text-muted-foreground truncate">{message.replyToText || ''}</p>
+              </div>
+            )}
+
             {/* Forwarded Label */}
             {message.forwarded && (
               <div className="flex items-center text-muted-foreground mb-1 text-[11px] italic">
@@ -160,7 +206,39 @@ const MessageBubble = function MessageBubble({
               </div>
             )}
 
-            {message.text && (
+            {isEditing ? (
+              <div className="mb-1">
+                <textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  autoFocus
+                  rows={2}
+                  className="w-full text-sm bg-white/70 border border-border rounded-md px-2 py-1 outline-none focus:border-accent resize-none"
+                />
+                <div className="flex items-center justify-end gap-3 mt-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEditing(false);
+                      setEditText(message.text);
+                    }}
+                    className="text-xs text-muted-foreground hover:underline"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit?.(message.id, editText);
+                      setIsEditing(false);
+                    }}
+                    className="text-xs font-medium text-emerald-600 hover:underline"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : message.text && (
               <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${message.attachmentUrl ? 'mb-2' : ''}`}>
                 {message.text}
                 <span className="inline-block w-14" />
@@ -212,8 +290,22 @@ const MessageBubble = function MessageBubble({
               </div>
             )}
 
+            {/* Poll Display */}
+            {message.type === 'poll' && message.pollData && (
+              <div className="mb-4">
+                <PollDisplay 
+                  message={message}
+                  conversationId={conversationId}
+                  currentUserId={currentUserId}
+                />
+              </div>
+            )}
+
             {/* Floating Timestamp inside the bubble */}
             <div className="absolute bottom-1 right-2 flex items-center space-x-1">
+              {message.edited && (
+                <span className="text-[10px] text-muted italic mt-1">edited</span>
+              )}
               <span className="text-[10px] text-muted opacity-80 mt-1">
                 {format(message.timestamp, 'h:mm a')}
               </span>
@@ -239,6 +331,39 @@ const MessageBubble = function MessageBubble({
               </button>
             )}
 
+            {/* Hover Reaction Button */}
+            {!selectionMode && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReactPicker(!showReactPicker);
+                }}
+                className={`absolute top-1 right-6 p-0.5 rounded-full bg-black/5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${showReactPicker ? 'opacity-100' : ''}`}
+                title="React"
+              >
+                <SmilePlus className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Reaction Emoji Picker */}
+            {showReactPicker && (
+              <div className="absolute bottom-8 right-1 bg-surface border border-border shadow-lg rounded-full py-1 px-1 z-50 flex items-center gap-0.5">
+                {REACTION_EMOJIS.map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReact?.(message.id, emoji);
+                      setShowReactPicker(false);
+                    }}
+                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-surface-hover rounded-full transition-transform hover:scale-110"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Dropdown Menu */}
             {showMenu && (
               <div className="absolute top-6 right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-50 min-w-[120px]">
@@ -257,27 +382,107 @@ const MessageBubble = function MessageBubble({
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowMenu(false);
-                    onCopy?.(message);
+                    onReply?.(message);
                   }}
                   className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
                 >
-                  <Copy className="w-4 h-4" />
-                  Copy
+                  <Reply className="w-4 h-4" />
+                  Reply
                 </button>
+                {isOwnMessage && message.type === 'text' && !message.attachmentUrl && (Date.now() - message.timestamp) < 15 * 60 * 1000 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      setEditText(message.text);
+                      setIsEditing(true);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Edit
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowMenu(false);
-                    onForward?.(message);
+                    if (window.confirm('Delete this message for yourself?')) {
+                      onDelete?.(message.id, 'me');
+                    }
                   }}
                   className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
                 >
-                  <Forward className="w-4 h-4" />
-                  Forward
+                  <Trash2 className="w-4 h-4" />
+                  Delete for me
                 </button>
+                {isOwnMessage && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      if (window.confirm('Delete this message for everyone?')) {
+                        onDelete?.(message.id, 'everyone');
+                      }
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-destructive/10 hover:text-destructive flex items-center gap-2 text-foreground"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete for everyone
+                  </button>
+                )}
+                {message.type !== 'poll' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onCopy?.(message);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </button>
+                )}
+                {message.type !== 'poll' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onForward?.(message);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                  >
+                    <Forward className="w-4 h-4" />
+                    Forward
+                  </button>
+                )}
               </div>
             )}
           </div>
+
+          {/* Reaction Chips */}
+          {!selectionMode && (Object.entries(message.reactions || {}).some(([, uids]) => uids.length > 0)) && (
+            <div className={`flex flex-wrap items-center gap-1 mt-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+              {Object.entries(message.reactions || {})
+                .filter(([, uids]) => uids.length > 0)
+                .map(([emoji, uids]) => (
+                  <button
+                    key={emoji}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReact?.(message.id, emoji);
+                    }}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border shadow-sm transition-colors ${
+                      uids.includes(currentUserId) ? 'bg-accent/20 border-accent/50' : 'bg-surface border-border'
+                    }`}
+                  >
+                    <span>{emoji}</span>
+                    <span className="font-medium text-foreground/80">{uids.length}</span>
+                  </button>
+                ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -295,5 +500,11 @@ export default memo(MessageBubble, (prev, next) => {
          prev.isLastInGroup === next.isLastInGroup &&
          prev.senderProfile?.uid === next.senderProfile?.uid &&
          prev.senderProfile?.photoURL === next.senderProfile?.photoURL &&
-         prev.senderProfile?.displayName === next.senderProfile?.displayName;
+         prev.senderProfile?.displayName === next.senderProfile?.displayName &&
+         JSON.stringify(prev.message.pollData) === JSON.stringify(next.message.pollData) &&
+         JSON.stringify(prev.message.reactions) === JSON.stringify(next.message.reactions) &&
+         prev.message.text === next.message.text &&
+         prev.message.edited === next.message.edited &&
+         prev.message.deletedForEveryone === next.message.deletedForEveryone &&
+         JSON.stringify(prev.message.deletedFor) === JSON.stringify(next.message.deletedFor);
 });

@@ -21,7 +21,7 @@ service cloud.firestore {
       }
       function isOnlyUpdatingMessages() {
         let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
-        return affectedKeys.hasOnly(['lastMessage', 'lastMessageTimestamp', 'updatedAt']);
+        return !affectedKeys.hasAny(['participants', 'admins', 'groupName', 'groupPhoto', 'description', 'createdBy', 'createdAt', 'type']);
       }
       function isLeavingGroup() {
         let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
@@ -53,9 +53,26 @@ service cloud.firestore {
         function isParticipant() {
           return request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
         }
+        function isEditingOwnText() {
+          let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+          return request.resource.data.senderId == request.auth.uid &&
+                 affectedKeys.hasOnly(['text', 'edited', 'editedAt']) &&
+                 request.time.diff(resource.data.timestamp, SECONDS) < 900;
+        }
+        function isDeletingOwnMessage() {
+          return request.resource.data.senderId == request.auth.uid &&
+                 request.resource.data.deletedForEveryone == true;
+        }
         
         allow read, create: if isAuthenticated() && isParticipant();
-        allow update: if isAuthenticated() && isParticipant();
+        // Updates that touch 'text' must be the sender editing within 15 minutes,
+        // or the sender deleting the message for everyone;
+        // other participant updates (readBy, deliveredTo, reactions, pollData, deletedFor) are always allowed.
+        allow update: if isAuthenticated() && isParticipant() && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['text']) ||
+          isEditingOwnText() ||
+          isDeletingOwnMessage()
+        );
         allow delete: if false; // Disallow message deletion for now
       }
     }
