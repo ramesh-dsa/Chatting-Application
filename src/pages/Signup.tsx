@@ -4,6 +4,11 @@ import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } 
 import { doc, setDoc } from 'firebase/firestore';
 import { MessageSquare, User, Mail, Lock, Loader2 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { BorderBeam } from '../registry/magicui/border-beam';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -69,104 +74,111 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-surface to-background p-4">
-      <div className="w-full max-w-md bg-surface border border-border rounded-2xl p-8 shadow-lg shadow-black/5">
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-accent/10 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-surface to-background">
+      <Card className="relative w-full max-w-[400px] overflow-hidden rounded-2xl shadow-lg border-border">
+        <CardHeader className="text-center pb-6 pt-8">
+          <div className="mx-auto inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4 shadow-sm">
             <MessageSquare className="w-8 h-8 text-accent" />
           </div>
-          <h2 className="text-3xl font-bold tracking-tight text-foreground">Antigravity Chat</h2>
-          <p className="text-muted-foreground mt-2">Sign up to get started</p>
-        </div>
-
-        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${error ? 'max-h-24 opacity-100 mb-6' : 'max-h-0 opacity-0 mb-0'}`}>
-          <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-xl border border-destructive/20 text-center">
-            {error}
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">Display Name</label>
-            <div className="relative">
-              <User className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                required
-                className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-shadow"
-                placeholder="John Doe"
-                value={formData.displayName}
-                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-              />
+          <CardTitle className="text-3xl font-bold tracking-tight text-foreground">Antigravity Chat</CardTitle>
+          <CardDescription className="text-muted mt-2">
+            Sign up to get started
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pb-8">
+          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${error ? 'max-h-24 opacity-100 mb-6' : 'max-h-0 opacity-0 mb-0'}`}>
+            <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-xl border border-destructive/20 text-center">
+              {error}
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">Email</label>
-            <div className="relative">
-              <Mail className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="email"
-                required
-                className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-shadow"
-                placeholder="you@example.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid w-full items-center gap-4">
+              <div className="flex flex-col space-y-1.5">
+                <Label className="text-muted-foreground mb-1">Display Name</Label>
+                <div className="relative">
+                  <User className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="text"
+                    required
+                    className="pl-10 h-11 rounded-xl"
+                    placeholder="John Doe"
+                    value={formData.displayName}
+                    onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col space-y-1.5">
+                <Label className="text-muted-foreground mb-1">Email</Label>
+                <div className="relative">
+                  <Mail className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="email"
+                    required
+                    className="pl-10 h-11 rounded-xl"
+                    placeholder="you@example.com"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col space-y-1.5">
+                <Label className="text-muted-foreground mb-1">Password</Label>
+                <div className="relative">
+                  <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="password"
+                    required
+                    className="pl-10 h-11 rounded-xl"
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col space-y-1.5">
+                <Label className="text-muted-foreground mb-1">Confirm Password</Label>
+                <div className="relative">
+                  <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                  <Input
+                    type="password"
+                    required
+                    className="pl-10 h-11 rounded-xl"
+                    placeholder="••••••••"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">Password</label>
-            <div className="relative">
-              <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="password"
-                required
-                className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-shadow"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">Confirm Password</label>
-            <div className="relative">
-              <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="password"
-                required
-                className="w-full bg-background border border-border rounded-xl py-2.5 pl-10 pr-4 text-foreground focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-shadow"
-                placeholder="••••••••"
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex justify-center items-center py-2.5 px-4 bg-accent text-accent-foreground rounded-xl text-sm font-medium hover:bg-accent-hover transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed mt-6 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-surface focus:ring-accent"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Creating account...
-              </>
-            ) : 'Sign Up'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          Already have an account?{' '}
-          <Link to="/login" className="text-accent hover:underline font-medium">
-            Log in
-          </Link>
-        </p>
-      </div>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full h-11 rounded-xl text-sm font-medium bg-accent hover:bg-accent-hover mt-6"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Creating account...
+                </>
+              ) : 'Sign Up'}
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="flex justify-center pb-8 pt-0">
+          <p className="text-center text-sm text-muted">
+            Already have an account?{' '}
+            <Link to="/login" className="text-accent hover:text-accent-hover hover:underline font-medium">
+              Log in
+            </Link>
+          </p>
+        </CardFooter>
+        <BorderBeam duration={8} size={300} reverse className="from-transparent via-accent to-transparent" />
+      </Card>
     </div>
   );
 }

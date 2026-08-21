@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { format } from 'date-fns';
-import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare, SmilePlus, Reply, Pencil, Trash2 } from 'lucide-react';
+import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare, SmilePlus, Reply, Pencil, Trash2, Phone, Video, PhoneMissed } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 import PollDisplay from './PollDisplay';
 
@@ -68,6 +68,34 @@ const MessageBubble = function MessageBubble({
         <span className="bg-black/5 text-muted-foreground text-xs px-3 py-1.5 rounded-full text-center">
           {message.text}
         </span>
+      </div>
+    );
+  }
+
+  if (message.type === 'call') {
+    const isMissed = message.callStatus === 'missed';
+    const isVideo = message.callType === 'video';
+    const CallIcon = isMissed ? PhoneMissed : (isVideo ? Video : Phone);
+    
+    let callText = '';
+    if (isMissed) {
+      callText = isOwnMessage ? 'You missed a call' : 'Missed call';
+    } else if (message.callStatus === 'ended') {
+      const durationStr = message.duration ? `${Math.floor(message.duration / 60)}:${(message.duration % 60).toString().padStart(2, '0')}` : '0:00';
+      callText = `${isVideo ? 'Video' : 'Voice'} call ended (${durationStr})`;
+    } else if (message.callStatus === 'declined') {
+      callText = 'Call declined';
+    } else if (message.callStatus === 'busy') {
+      callText = 'Line busy';
+    }
+
+    return (
+      <div className="flex justify-center my-3 w-full">
+        <div className="flex items-center gap-2 bg-black/5 text-muted-foreground px-4 py-2 rounded-full">
+          <CallIcon className={`w-4 h-4 ${isMissed ? 'text-red-500' : ''}`} />
+          <span className="text-sm font-medium">{callText}</span>
+          <span className="text-xs opacity-70 ml-2">{format(message.timestamp, 'HH:mm')}</span>
+        </div>
       </div>
     );
   }
@@ -190,7 +218,7 @@ const MessageBubble = function MessageBubble({
           <div 
             id={`msg-${message.id}`}
             onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
-            className={`px-3 pt-2 pb-1.5 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 ${radiusClass} ${
+            className={`px-[9px] pt-[6px] pb-[8px] relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
@@ -247,9 +275,9 @@ const MessageBubble = function MessageBubble({
                 </div>
               </div>
             ) : message.text && (
-              <p className={`text-sm whitespace-pre-wrap break-words leading-relaxed ${message.attachmentUrl ? 'mb-2' : ''}`}>
+              <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${message.attachmentUrl ? 'mb-2' : ''}`}>
                 {message.text}
-                <span className="inline-block w-14" />
+                <span className="inline-block w-[60px]" />
               </p>
             )}
             
@@ -313,9 +341,9 @@ const MessageBubble = function MessageBubble({
             {/* Floating Timestamp inside the bubble */}
             <div className="absolute bottom-1 right-2 flex items-center space-x-1">
               {message.edited && (
-                <span className="text-[10px] text-muted italic mt-1">edited</span>
+                <span className="text-[11px] text-muted italic mt-1">edited</span>
               )}
-              <span className="text-[10px] text-muted opacity-80 mt-1">
+              <span className="text-[11px] text-muted opacity-80 mt-1">
                 {format(message.timestamp, 'h:mm a')}
               </span>
               {isOwnMessage && (

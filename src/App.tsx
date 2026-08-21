@@ -7,6 +7,7 @@ import { usePushNotifications } from './hooks/usePushNotifications';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
+import { CallProvider } from './context/CallContext';
 
 // A small wrapper to initialize presence for logged-in users
 function PresenceManager({ children }: { children: React.ReactNode }) {
@@ -48,7 +49,9 @@ function App() {
                 path="/" 
                 element={
                   <ProtectedRoute>
-                    <Dashboard />
+                    <CallProvider>
+                      <Dashboard />
+                    </CallProvider>
                   </ProtectedRoute>
                 } 
               />

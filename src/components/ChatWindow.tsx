@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, increment, writeBatch, limit, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
-import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, Copy, CheckSquare, Image as ImageIcon, Trash2, Star, Download } from 'lucide-react';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, CheckSquare, Image as ImageIcon, Trash2, Star, Download } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import { useCall } from '../context/CallContext';
 import type { Message, Conversation, UserProfile, PollData } from '../types';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
@@ -39,6 +40,7 @@ interface ChatWindowProps {
 
 export default function ChatWindow({ conversationId, onBack, initialHighlightId, usersMap }: ChatWindowProps) {
   const { currentUser } = useAuth();
+  const { initiateCall } = useCall();
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -775,7 +777,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       <div className="flex-1 flex flex-col w-full h-full bg-bg-chat relative">
         {/* Forward Selection Header */}
         {forwardSelectionMode && (
-          <div className="absolute top-0 left-0 right-0 h-16 bg-surface border-b border-border z-20 flex items-center justify-between px-3 sm:px-4 animate-in slide-in-from-top-4 shadow-sm">
+          <div className="absolute top-0 left-0 right-0 h-[60px] bg-bg-sidebar border-b border-border z-20 flex items-center justify-between px-3 sm:px-4 animate-in slide-in-from-top-4">
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => {
@@ -828,7 +830,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         )}
 
         {/* Header */}
-        <div className="h-16 border-b border-border bg-surface flex-shrink-0 flex items-center justify-between px-4 sm:px-6 z-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+        <div className="h-[60px] border-b border-border bg-bg-sidebar flex-shrink-0 flex items-center justify-between px-4 z-10">
           {isSearching ? (
             <div className="flex-1 flex items-center bg-background rounded-xl px-3 py-1 mr-4 border border-accent/20">
               <button 
@@ -894,9 +896,9 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
                   )}
                 </div>
-                <div>
-                  <h2 className="font-bold text-foreground">{chatTitle}</h2>
-                  <p className="text-xs text-muted font-normal">{chatStatus}</p>
+                <div className="ml-1">
+                  <h2 className="text-[16px] font-normal text-foreground leading-5">{chatTitle}</h2>
+                  <p className="text-[13px] text-muted font-normal mt-0.5">{chatStatus}</p>
                 </div>
               </button>
             </div>
@@ -912,14 +914,32 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 <ImageIcon className="w-5 h-5" />
               </button>
               <button 
-                onClick={() => setToastMessage("Voice calling isn't available yet")}
-                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
+                onClick={() => {
+                  if (conversation.type === 'direct') {
+                    const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
+                    if (otherUid) {
+                      initiateCall(otherUid, chatTitle, chatAvatar, 'voice', conversationId);
+                    }
+                  } else {
+                    setToastMessage("Group calls aren't available yet");
+                  }
+                }}
+                className="p-2 text-muted-foreground hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
               >
                 <Phone className="w-5 h-5" />
               </button>
               <button 
-                onClick={() => setToastMessage("Video calling isn't available yet")}
-                className="p-2 text-muted-foreground opacity-60 cursor-not-allowed hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
+                onClick={() => {
+                  if (conversation.type === 'direct') {
+                    const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
+                    if (otherUid) {
+                      initiateCall(otherUid, chatTitle, chatAvatar, 'video', conversationId);
+                    }
+                  } else {
+                    setToastMessage("Group calls aren't available yet");
+                  }
+                }}
+                className="p-2 text-muted-foreground hover:bg-black/5 hover:text-foreground rounded-full transition-colors"
               >
                 <Video className="w-5 h-5" />
               </button>

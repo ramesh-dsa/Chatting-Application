@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
+import IconRail from '../components/IconRail';
 import ChatWindow from '../components/ChatWindow';
 import { MessageSquare } from 'lucide-react';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -11,6 +12,7 @@ export default function Dashboard() {
   const [searchMessageId, setSearchMessageId] = useState<string | null>(null);
   const [usersMap, setUsersMap] = useState<Record<string, UserProfile>>({});
   const [isUsersLoaded, setIsUsersLoaded] = useState(false);
+  const [showMyProfile, setShowMyProfile] = useState(false);
 
   useEffect(() => {
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -34,13 +36,21 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden pb-[60px] md:pb-0 relative">
+      <IconRail 
+        onProfileClick={() => setShowMyProfile(true)} 
+        onChatsClick={() => setShowMyProfile(false)}
+        activeTab={showMyProfile ? "profile" : "chats"}
+      />
+
       {/* Sidebar - hidden on mobile if a chat is active */}
-      <div className={`w-full md:w-[380px] flex-shrink-0 border-r border-border h-full ${activeConversationId ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full md:w-[30%] md:min-w-[350px] md:max-w-[450px] flex-shrink-0 border-r border-border h-full ${activeConversationId ? 'hidden md:flex' : 'flex'}`}>
         <Sidebar 
           activeConversationId={activeConversationId} 
           usersMap={usersMap}
           isUsersLoaded={isUsersLoaded}
+          showMyProfile={showMyProfile}
+          setShowMyProfile={setShowMyProfile}
           onSelectConversation={(id, msgId) => {
             setActiveConversationId(id);
             setSearchMessageId(msgId || null);

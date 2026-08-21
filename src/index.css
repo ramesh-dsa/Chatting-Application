@@ -1,50 +1,62 @@
 @import "tailwindcss";
 
 @theme {
-  /* PROFESSIONAL TELEGRAM-STYLE LIGHT THEME - 60/30/10 RULE */
+  /* WHATSAPP WEB EXACT THEME */
   
-  /* 60% DOMINANT (neutral base) */
-  --color-bg-app: #ffffff;             /* Outermost app background */
-  --color-bg-chat: #fafbfc;            /* Chat message area background */
+  /* Backgrounds */
+  --color-bg-app: #e3e2de;             /* App container background behind chat */
+  --color-bg-chat: #efeae2;            /* Chat message area background */
   --color-background: #ffffff;         /* Base text background fallback */
   
-  /* 30% SECONDARY (supporting/structure) */
-  --color-bg-sidebar: #f5f7f9;         /* Sidebar panel background */
-  --color-surface: #ffffff;            /* Card/Header backgrounds */
-  --color-surface-hover: #f5f7f9;      /* Hover state for surface */
-  --color-border: #e4e7eb;             /* 1px divider border */
+  /* Sidebar and Headers */
+  --color-bg-sidebar: #ffffff;         /* Sidebar panel background */
+  --color-surface: #f0f2f5;            /* Headers and input bars */
+  --color-surface-hover: #f5f6f6;      /* Hover state for chat list items */
+  --color-border: #e9edef;             /* Divider border */
   
-  /* 10% ACCENT (Telegram Blue) */
-  --color-accent: #0088cc;             /* Primary blue - buttons, highlights, sent bubbles */
-  --color-accent-hover: #0077b6;       /* Darker blue - hover state */
-  --color-accent-foreground: #ffffff;  /* White text on blue background */
+  /* Accent Colors */
+  --color-accent: #00a884;             /* WhatsApp Teal/Green */
+  --color-accent-hover: #008f6f;       /* Darker green - hover state */
+  --color-accent-foreground: #ffffff;  /* White text on green background */
   
   /* Text & Foreground */
-  --color-foreground: #212121;         /* Dark primary text */
-  --color-text-primary: #111827;       /* Bold/headings text */
-  --color-muted: #6b7280;              /* Secondary text, statuses */
-  --color-muted-foreground: #9ca3af;   /* Lighter metadata */
+  --color-foreground: #111b21;         /* Primary text */
+  --color-text-primary: #111b21;       /* Bold/headings text */
+  --color-muted: #667781;              /* Secondary text, statuses, preview */
+  --color-muted-foreground: #8696a0;   /* Light gray icons */
   
   /* Chat Bubble Colors */
-  --color-bubble-sent: #e3f2fd;        /* Extremely light blue for sent messages (ties to accent) */
-  --color-bubble-received: #ffffff;    /* White for received messages (ties to secondary) */
+  --color-bubble-sent: #d9fdd3;        /* WhatsApp Sent message green */
+  --color-bubble-received: #ffffff;    /* Received message white */
   
   /* Status Colors */
-  --color-success: #4caf50;            /* Green - online, success */
-  --color-error: #f44336;              /* Red - errors, delete */
+  --color-success: #25d366;            /* WhatsApp green - online, success */
+  --color-error: #ea0038;              /* Red - errors, delete */
   --color-warning: #ff9800;            /* Orange - warnings */
-  --color-info: #2196f3;               /* Blue - information */
+  --color-info: #53bdeb;               /* Blue - links/info */
   
   /* Typography */
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Segoe UI', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
   
-  /* Font scales */
-  --font-size-xs: 0.75rem;             /* 12px */
-  --font-size-sm: 0.875rem;            /* 14px */
-  --font-size-base: 1rem;              /* 16px */
-  --font-size-lg: 1.125rem;            /* 18px */
-  --font-size-xl: 1.25rem;             /* 20px */
-  --font-size-2xl: 1.5rem;             /* 24px */
+  /* Font scales matching WhatsApp Web */
+  --font-size-xs: 12px;                /* Time, dates */
+  --font-size-sm: 13px;                /* Small info, status */
+  --font-size-base: 14.2px;            /* Chat messages, previews */
+  --font-size-lg: 16px;                /* Chat Header Name */
+  --font-size-xl: 17px;                /* Sidebar Contact Name */
+  --font-size-2xl: 19px;               /* Large headers */
+
+  /* Animations */
+  --animate-border-beam: border-beam calc(var(--duration)*1s) infinite linear;
+}
+
+@keyframes border-beam {
+  0% {
+    offset-distance: 0%;
+  }
+  100% {
+    offset-distance: 100%;
+  }
 }
 
 @layer base {

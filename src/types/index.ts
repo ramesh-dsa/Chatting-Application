@@ -50,7 +50,9 @@ export interface Message {
   timestamp: number;
   readBy: string[]; // Array of UIDs
   deliveredTo?: string[]; // Array of UIDs
-  type: 'text' | 'image' | 'video' | 'document' | 'system' | 'voice' | 'poll';
+  type: 'text' | 'image' | 'video' | 'document' | 'system' | 'voice' | 'poll' | 'call';
+  callType?: 'voice' | 'video';
+  callStatus?: 'ended' | 'declined' | 'missed' | 'busy';
   forwarded?: boolean;
   pollData?: PollData;
   reactions?: Record<string, string[]>; // emoji -> array of UIDs who reacted

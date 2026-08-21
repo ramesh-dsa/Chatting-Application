@@ -310,7 +310,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
   // ---------------------------------
 
   return (
-    <div className="w-full flex-shrink-0 px-3 py-2 bg-surface border-t border-border z-10 relative">
+    <div className="w-full flex-shrink-0 px-2 sm:px-4 py-2.5 bg-bg-sidebar z-10 relative">
       
       {/* Hidden File Inputs */}
       <input 
@@ -401,11 +401,12 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-end bg-background rounded-3xl px-1.5 py-1 border border-border focus-within:ring-1 focus-within:ring-accent focus-within:border-accent transition-all">
+      <form onSubmit={handleSubmit} className="flex items-end gap-2 w-full">
         
-        {/* Left Side: Attachments and Emoji */}
-        {!isRecording && (
-          <div className="flex items-center gap-0.5 shrink-0 pb-0.5 pl-1 animate-in fade-in">
+        <div className="flex-1 flex items-end bg-surface rounded-3xl px-2 py-1 border border-border/50 focus-within:ring-1 focus-within:ring-accent/50 transition-all">
+          {/* Left Side: Attachments and Emoji */}
+          {!isRecording && (
+            <div className="flex items-center gap-0.5 shrink-0 pb-0.5 pl-1 animate-in fade-in">
             {/* Attachment Menu */}
             <div className="relative" ref={attachMenuRef}>
               {showAttachMenu && (
@@ -524,30 +525,32 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
             }}
             rows={1}
             placeholder="Type a message"
-            className="flex-1 bg-transparent border-none px-3 py-3 text-[15px] text-foreground focus:outline-none placeholder:text-muted resize-none overflow-y-auto min-h-[44px] max-h-[150px] leading-relaxed m-0"
+            className="flex-1 bg-transparent border-none px-3 py-2.5 text-[15px] text-foreground focus:outline-none placeholder:text-muted resize-none overflow-y-auto min-h-[44px] max-h-[150px] leading-relaxed m-0"
             disabled={isSending || uploadProgress != null}
           />
         )}
 
+        </div>
+
         {/* Right Side: Send/Mic Button */}
-        <div className="shrink-0 pb-1 pr-1 flex items-center justify-center ml-1 gap-1">
+        <div className="shrink-0 flex items-center justify-center">
           {!isRecording && (
             <>
               <button 
                 type="button"
                 onPointerDown={startRecording}
                 disabled={isSending || uploadProgress != null}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 touch-none ${
+                className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 touch-none ${
                   (isSending || uploadProgress != null) ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                } ${text.trim() || selectedFile ? 'hidden' : 'block'}`}
               >
                 <Mic className="w-5 h-5" />
               </button>
               <button 
                 type="submit"
                 disabled={(!text.trim() && !selectedFile) || isSending || uploadProgress != null}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 ${
-                  (!text.trim() && !selectedFile) || isSending || uploadProgress != null ? 'cursor-not-allowed' : ''
+                className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 ${
+                  (!text.trim() && !selectedFile) || isSending || uploadProgress != null ? 'cursor-not-allowed hidden' : 'block'
                 }`}
               >
                 <Send className="w-5 h-5 ml-0.5" />
@@ -557,7 +560,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
 
           {isRecording && (
             <div 
-              className={`w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white relative ${isLocked ? 'hover:scale-105 active:scale-95 cursor-pointer' : ''}`}
+              className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white relative ${isLocked ? 'hover:scale-105 active:scale-95 cursor-pointer' : ''}`}
               style={{ transform: !isLocked ? `translate(${slideOffset}px, 0)` : 'none' }}
               onClick={isLocked ? sendRecording : undefined}
             >

@@ -21,15 +21,16 @@ interface SidebarProps {
   onSelectConversation: (id: string, searchMessageId?: string) => void;
   usersMap: Record<string, UserProfile>;
   isUsersLoaded: boolean;
+  showMyProfile: boolean;
+  setShowMyProfile: (show: boolean) => void;
 }
 
-export default function Sidebar({ activeConversationId, onSelectConversation, usersMap, isUsersLoaded }: SidebarProps) {
+export default function Sidebar({ activeConversationId, onSelectConversation, usersMap, isUsersLoaded, showMyProfile, setShowMyProfile }: SidebarProps) {
   const { userProfile, currentUser } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
-  const [showMyProfile, setShowMyProfile] = useState(false);
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
@@ -248,34 +249,13 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     return <MyProfilePanel onClose={() => setShowMyProfile(false)} />;
   }
 
-  const activeUserProfile = currentUser && usersMap[currentUser.uid] ? usersMap[currentUser.uid] : userProfile;
+
 
   return (
     <div className="w-full h-full flex flex-col bg-bg-sidebar border-r border-border">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
-        <div 
-          className="flex items-center space-x-3 cursor-pointer hover:bg-background/50 p-1.5 -ml-1.5 rounded-lg transition-colors"
-          onClick={() => setShowMyProfile(true)}
-        >
-          <div className="relative">
-            {activeUserProfile?.photoURL ? (
-              <img 
-                key={activeUserProfile.photoURL}
-                src={activeUserProfile.photoURL} 
-                alt="Profile" 
-                className="w-10 h-10 rounded-full object-cover border border-border"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${activeUserProfile?.displayName || 'U'}`;
-                }}
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-border animate-pulse border border-border"></div>
-            )}
-            <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
-          </div>
-          <h1 className="font-semibold text-foreground truncate w-32">{activeUserProfile?.displayName}</h1>
-        </div>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Chats</h1>
         <div className="flex space-x-1">
           <button 
             onClick={() => setIsNewChatModalOpen(true)}
