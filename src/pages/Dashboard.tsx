@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ShinyText from '../components/ui/ShinyText';
 import Sidebar from '../components/Sidebar';
 import IconRail from '../components/IconRail';
 import ChatWindow from '../components/ChatWindow';
@@ -77,7 +78,20 @@ export default function Dashboard() {
             <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center mb-6 shadow-sm border border-border">
               <MessageSquare className="w-10 h-10 text-muted-foreground opacity-50" />
             </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2 tracking-tight">Your Messages</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2 tracking-tight">
+              <ShinyText
+                text="Let's Chat"
+                speed={1.5}
+                delay={0}
+                color="#b5b5b5"
+                shineColor="#ffffff"
+                spread={120}
+                direction="left"
+                yoyo={false}
+                pauseOnHover={false}
+                triggerOnHover={true}
+              />
+            </h2>
             <p className="text-muted text-sm max-w-sm">
               Select a chat to start messaging
             </p>
