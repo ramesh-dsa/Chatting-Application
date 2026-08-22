@@ -83,8 +83,8 @@ export default function Dashboard() {
                 text="Let's Chat"
                 speed={1.5}
                 delay={0}
-                color="#b5b5b5"
-                shineColor="#ffffff"
+                color="#4b5563"
+                shineColor="#9ca3af"
                 spread={120}
                 direction="left"
                 yoyo={false}
