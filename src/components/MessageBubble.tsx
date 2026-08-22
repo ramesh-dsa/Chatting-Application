@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare, SmilePlus, Reply, Pencil, Trash2, Phone, Video, PhoneMissed } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 import PollDisplay from './PollDisplay';
+import { Avatar } from './ui/Avatar';
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 
@@ -201,10 +202,10 @@ const MessageBubble = function MessageBubble({
         
         {/* Avatar on last message in group */}
         {!isOwnMessage && isGroupChat && isLastInGroup && (
-          <img 
-            src={senderProfile?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${senderProfile?.displayName || 'U'}`} 
+          <Avatar 
+            src={senderProfile?.photoURL || ''} 
             alt="avatar" 
-            className="w-8 h-8 rounded-full flex-shrink-0 mt-auto mr-2 shadow-sm"
+            className="w-8 h-8 mt-auto mr-2 shadow-sm"
           />
         )}
 

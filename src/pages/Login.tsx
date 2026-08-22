@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
 import { MessageSquare, Mail, Lock, LogIn, Loader2, ArrowLeft, RefreshCw } from 'lucide-react';
@@ -17,17 +17,68 @@ export default function Login() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutTimer, setLockoutTimer] = useState<number>(0);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!lockoutUntil) return;
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setLockoutTimer(0);
+        clearInterval(interval);
+      } else {
+        setLockoutTimer(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
+  const getAttempts = (emailToCheck: string) => {
+    const data = localStorage.getItem(`login_attempts_${emailToCheck}`);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Date.now() < parsed.expiry) {
+        return parsed.count;
+      }
+    }
+    return 0;
+  };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      return;
+    }
+
+    const attempts = getAttempts(email);
+    if (attempts >= 5) {
+      const newLockout = Date.now() + 5 * 60 * 1000;
+      setLockoutUntil(newLockout);
+      localStorage.setItem(`login_attempts_${email}`, JSON.stringify({ count: 5, expiry: newLockout }));
+      setError('Too many failed login attempts. Please try again later.');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      localStorage.removeItem(`login_attempts_${email}`);
       navigate('/');
     } catch (err: any) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      const currentAttempts = getAttempts(email);
+      const newCount = currentAttempts + 1;
+      const expiry = Date.now() + 5 * 60 * 1000;
+      localStorage.setItem(`login_attempts_${email}`, JSON.stringify({ count: newCount, expiry }));
+
+      if (newCount >= 5) {
+        setLockoutUntil(expiry);
+        setError('Too many failed login attempts. Please try again later.');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         setError('Invalid email or password.');
       } else if (err.code === 'auth/too-many-requests') {
         setError('Too many failed login attempts. Please try again later.');
@@ -193,8 +244,10 @@ export default function Login() {
                 </div>
               </div>
               
-              <Button type="submit" disabled={loading} className="w-full h-11 rounded-xl text-sm font-medium bg-accent hover:bg-accent-hover mt-6">
-                {loading ? (
+              <Button type="submit" disabled={loading || !!lockoutUntil} className="w-full h-11 rounded-xl text-sm font-medium bg-accent hover:bg-accent-hover mt-6">
+                {lockoutUntil ? (
+                  `Try again in ${Math.floor(lockoutTimer / 60)}:${(lockoutTimer % 60).toString().padStart(2, '0')}`
+                ) : loading ? (
                   <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Signing in...</>
                 ) : (
                   <><LogIn className="w-5 h-5 mr-2" /> Sign in</>

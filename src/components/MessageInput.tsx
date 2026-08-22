@@ -30,6 +30,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
   const [isLocked, setIsLocked] = useState(false);
   const [slideOffset, setSlideOffset] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +48,8 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
     isRecording: false,
     isLocked: false,
   });
+  
+  const recentSendsRef = useRef<number[]>([]);
 
   const onTypingRef = useRef(onTyping);
   onTypingRef.current = onTyping;
@@ -133,8 +136,25 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if ((!text.trim() && !selectedFile) || isSending || uploadProgress != null) return;
+    if ((!text.trim() && !selectedFile) || isSending || uploadProgress != null || rateLimitMessage) return;
     
+    const now = Date.now();
+    if (recentSendsRef.current.length > 0) {
+      const lastSend = recentSendsRef.current[recentSendsRef.current.length - 1];
+      if (now - lastSend < 500) {
+        return; // debounce
+      }
+    }
+
+    const recent = recentSendsRef.current.filter(time => now - time < 10000);
+    if (recent.length >= 10) {
+      setRateLimitMessage("You're sending messages too fast");
+      setTimeout(() => setRateLimitMessage(null), 3000);
+      recentSendsRef.current = recent;
+      return;
+    }
+    recentSendsRef.current = [...recent, now];
+
     const messageText = text.trim();
     const currentFile = selectedFile;
 
@@ -383,6 +403,12 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
         </div>
       )}
 
+      {rateLimitMessage && (
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-xs px-3 py-1.5 rounded-full shadow-md z-50 animate-in fade-in slide-in-from-bottom-2">
+          {rateLimitMessage}
+        </div>
+      )}
+
       {replyingTo && (
         <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-3xl shadow-sm mb-1 border-l-4 border-accent">
           <div className="min-w-0 flex-1">
@@ -526,7 +552,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
             rows={1}
             placeholder="Type a message"
             className="flex-1 bg-transparent border-none px-3 py-2.5 text-[15px] text-foreground focus:outline-none placeholder:text-muted resize-none overflow-y-auto min-h-[44px] max-h-[150px] leading-relaxed m-0"
-            disabled={isSending || uploadProgress != null}
+            disabled={isSending || uploadProgress != null || !!rateLimitMessage}
           />
         )}
 
@@ -539,18 +565,18 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
               <button 
                 type="button"
                 onPointerDown={startRecording}
-                disabled={isSending || uploadProgress != null}
+                disabled={isSending || uploadProgress != null || !!rateLimitMessage}
                 className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 touch-none ${
-                  (isSending || uploadProgress != null) ? 'opacity-50 cursor-not-allowed' : ''
+                  (isSending || uploadProgress != null || !!rateLimitMessage) ? 'opacity-50 cursor-not-allowed' : ''
                 } ${text.trim() || selectedFile ? 'hidden' : 'block'}`}
               >
                 <Mic className="w-5 h-5" />
               </button>
               <button 
                 type="submit"
-                disabled={(!text.trim() && !selectedFile) || isSending || uploadProgress != null}
+                disabled={(!text.trim() && !selectedFile) || isSending || uploadProgress != null || !!rateLimitMessage}
                 className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 ${
-                  (!text.trim() && !selectedFile) || isSending || uploadProgress != null ? 'cursor-not-allowed hidden' : 'block'
+                  (!text.trim() && !selectedFile) || isSending || uploadProgress != null || !!rateLimitMessage ? 'cursor-not-allowed hidden' : 'block'
                 }`}
               >
                 <Send className="w-5 h-5 ml-0.5" />

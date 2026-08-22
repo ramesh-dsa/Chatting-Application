@@ -3,6 +3,7 @@ import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { Message, UserProfile } from '../types';
 import { Check, BarChart2, X } from 'lucide-react';
+import { Avatar } from './ui/Avatar';
 
 interface PollDisplayProps {
   message: Message;
@@ -226,7 +227,7 @@ export default function PollDisplay({ message, conversationId, currentUserId, us
                         return (
                           <div key={uid} className="flex items-center gap-3">
                             {user?.photoURL ? (
-                              <img src={user.photoURL} alt={user?.displayName || 'User'} className="w-7 h-7 rounded-full object-cover shadow-sm" />
+                              <Avatar src={user.photoURL} alt={user?.displayName || 'User'} className="w-7 h-7 shadow-sm" />
                             ) : (
                               <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-[10px] font-bold text-accent shadow-sm">
                                 {user?.displayName?.[0]?.toUpperCase() || '?'}

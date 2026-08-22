@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { BorderBeam } from '../registry/magicui/border-beam';
+import { validatePassword } from '../utils/validatePassword';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -27,6 +28,11 @@ export default function Signup() {
 
     if (formData.password !== formData.confirmPassword) {
       return setError('Passwords do not match');
+    }
+
+    const passwordErrorMsg = validatePassword(formData.password);
+    if (passwordErrorMsg) {
+      return setError(passwordErrorMsg);
     }
 
     try {

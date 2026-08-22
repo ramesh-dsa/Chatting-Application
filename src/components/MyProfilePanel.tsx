@@ -5,6 +5,8 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import ImageCropperModal from './ImageCropperModal';
+import { validatePassword } from '../utils/validatePassword';
+import { Avatar } from './ui/Avatar';
 
 interface MyProfilePanelProps {
   onClose: () => void;
@@ -113,6 +115,13 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
 
     setPasswordError('');
     setPasswordSuccess('');
+
+    const passwordErrorMsg = validatePassword(newPassword);
+    if (passwordErrorMsg) {
+      setPasswordError(passwordErrorMsg);
+      return;
+    }
+
     setIsChangingPassword(true);
 
     try {
@@ -149,19 +158,17 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
       {/* Hero Section */}
       <div className="flex flex-col items-center p-6 bg-surface">
         <div className="relative group mb-6">
-          <div className="w-40 h-40 rounded-full overflow-hidden bg-accent/10 flex items-center justify-center border-2 border-border">
+          <div className="w-40 h-40 rounded-full overflow-hidden flex items-center justify-center border-2 border-border">
             {userProfile.photoURL ? (
-              <img 
-                key={userProfile.photoURL}
+              <Avatar 
                 src={userProfile.photoURL} 
                 alt="Profile" 
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${userProfile.displayName || 'U'}`;
-                }}
+                className="w-full h-full"
               />
             ) : (
-              <span className="text-6xl text-accent font-semibold">{userProfile.displayName?.charAt(0)}</span>
+              <div className="w-full h-full bg-accent/10 flex items-center justify-center">
+                <span className="text-6xl text-accent font-semibold">{userProfile.displayName?.charAt(0)}</span>
+              </div>
             )}
           </div>
           <label className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity">

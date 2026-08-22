@@ -7,6 +7,7 @@ import type { Conversation, UserProfile, Message } from '../types';
 import { format, isToday, isYesterday } from 'date-fns';
 import NewChatModal from './NewChatModal';
 import MyProfilePanel from './MyProfilePanel';
+import { Avatar } from './ui/Avatar';
 
 function formatSidebarTime(timestamp: number) {
   if (!timestamp) return '';
@@ -348,7 +349,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                                 <Users className="w-6 h-6" />
                               </div>
                             ) : photoURL ? (
-                              <img src={photoURL} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
+                              <Avatar src={photoURL} alt={displayName} className="w-12 h-12" />
                             ) : (
                               <div className="w-12 h-12 rounded-full bg-surface-hover flex items-center justify-center">
                                 <MessageSquare className="w-5 h-5 opacity-50" />
@@ -397,7 +398,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                         className="w-full flex items-center p-3 rounded-xl transition-all hover:bg-black/5 text-muted-foreground"
                       >
                         <div className="relative flex-shrink-0">
-                          <img src={user.photoURL} alt={user.displayName} className="w-12 h-12 rounded-full object-cover" />
+                          <Avatar src={user.photoURL} alt={user.displayName} className="w-12 h-12" />
                         </div>
                         <div className="ml-4 flex-1 min-w-0 text-left">
                           <h3 className="text-sm font-medium truncate text-foreground">
@@ -436,7 +437,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                                 <Users className="w-6 h-6" />
                               </div>
                             ) : photoURL ? (
-                              <img src={photoURL} alt={displayName} className="w-12 h-12 rounded-full object-cover" />
+                              <Avatar src={photoURL} alt={displayName} className="w-12 h-12" />
                             ) : (
                               <div className="w-12 h-12 rounded-full bg-surface-hover flex items-center justify-center">
                                 <MessageSquare className="w-5 h-5 opacity-50" />

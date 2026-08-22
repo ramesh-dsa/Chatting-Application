@@ -4,6 +4,7 @@ import { X, Users } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { UserProfile } from '../types';
+import { Avatar } from './ui/Avatar';
 
 interface NewChatModalProps {
   onClose: () => void;
@@ -44,9 +45,38 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
     fetchUsers();
   }, [userProfile]);
 
+  const checkChatCreationRateLimit = () => {
+    if (!userProfile) return false;
+    const key = `chat_creations_${userProfile.uid}`;
+    const now = Date.now();
+    let creations: number[] = [];
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        creations = JSON.parse(stored);
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Filter to last 60 seconds
+    creations = creations.filter(time => now - time < 60000);
+
+    if (creations.length >= 10) {
+      setError('You can only create up to 10 new chats per minute. Please wait.');
+      return false;
+    }
+
+    creations.push(now);
+    localStorage.setItem(key, JSON.stringify(creations));
+    return true;
+  };
+
   const handleStartDirectChat = async (otherUser: UserProfile) => {
     if (!userProfile) return;
+    
     setCreating(true);
+    setError('');
     try {
       const directConversationId = [userProfile.uid, otherUser.uid].sort().join('_');
       const convoRef = doc(db, 'conversations', directConversationId);
@@ -55,6 +85,11 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
       if (convoSnap.exists()) {
         onSelectConversation(directConversationId);
         onClose();
+        return;
+      }
+
+      if (!checkChatCreationRateLimit()) {
+        setCreating(false);
         return;
       }
 
@@ -77,6 +112,13 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
   const handleCreateGroup = async () => {
     if (!userProfile || selectedUsers.size === 0 || !groupName.trim()) return;
     setCreating(true);
+    setError('');
+    
+    if (!checkChatCreationRateLimit()) {
+      setCreating(false);
+      return;
+    }
+
     try {
       const participants = [userProfile.uid, ...Array.from(selectedUsers)];
       const groupNameTrimmed = groupName.trim();
@@ -168,7 +210,7 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
                         disabled={creating}
                         className="w-full flex items-center p-2 rounded-xl hover:bg-surface-hover transition-colors text-left disabled:opacity-50"
                       >
-                        <img src={u.photoURL} alt={u.displayName} className="w-10 h-10 rounded-full mr-3" />
+                        <Avatar src={u.photoURL} alt={u.displayName} className="w-10 h-10 mr-3" />
                         <div>
                           <div className="text-sm font-medium text-foreground">{u.displayName}</div>
                           <div className="text-xs text-muted truncate max-w-[200px]">{u.statusMessage}</div>
@@ -207,7 +249,7 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
                           onChange={() => toggleUserSelection(u.uid)}
                           className="mr-3 w-4 h-4 text-accent border-border rounded focus:ring-accent"
                         />
-                        <img src={u.photoURL} alt={u.displayName} className="w-8 h-8 rounded-full mr-3" />
+                        <Avatar src={u.photoURL} alt={u.displayName} className="w-8 h-8 mr-3" />
                         <span className="text-sm text-foreground">{u.displayName}</span>
                       </label>
                     </li>

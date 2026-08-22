@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PhoneOff, Phone, Mic, MicOff, Video, VideoOff, X } from 'lucide-react';
 import { useCall } from '../context/CallContext';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './ui/Avatar';
 
 export default function CallOverlay() {
   const { 
@@ -127,10 +128,10 @@ export default function CallOverlay() {
         {/* Header Info */}
         <div className="flex flex-col items-center mt-10">
           {(activeCall.status === 'ringing' || !isVideo) && (
-            <img 
+            <Avatar 
               src={otherPhoto || 'https://api.dicebear.com/7.x/initials/svg?seed=U'} 
               alt="Avatar" 
-              className={`w-32 h-32 rounded-full object-cover mb-6 border-4 border-white/20 shadow-xl ${activeCall.status === 'ringing' ? 'animate-pulse' : ''}`}
+              className={`w-32 h-32 mb-6 border-4 border-white/20 shadow-xl ${activeCall.status === 'ringing' ? 'animate-pulse' : ''}`}
             />
           )}
           <h2 className="text-3xl font-semibold drop-shadow-md">{otherName}</h2>

@@ -4,6 +4,7 @@ import { X, Search, Check } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, Message, UserProfile } from '../types';
+import { Avatar } from './ui/Avatar';
 
 interface ForwardModalProps {
   selectedMessages: Message[];
@@ -66,11 +67,13 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
   };
 
   const getChatPhoto = (convo: Conversation) => {
-    if (convo.type === 'group') return convo.groupPhoto || `https://api.dicebear.com/7.x/initials/svg?seed=${convo.groupName || 'G'}`;
+    if (convo.type === 'group') {
+      return convo.groupPhoto || '';
+    }
     const otherId = convo.participants.find(id => id !== userProfile?.uid);
     return otherId && usersMap[otherId]?.photoURL 
       ? usersMap[otherId].photoURL 
-      : `https://api.dicebear.com/7.x/initials/svg?seed=${otherId && usersMap[otherId] ? usersMap[otherId].displayName : 'U'}`;
+      : '';
   };
 
   const filteredConversations = conversations.filter(c => {
@@ -190,7 +193,7 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
                       />
                       <Check className="w-3 h-3 text-accent-foreground absolute pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={3} />
                     </div>
-                    <img src={getChatPhoto(c)} alt="chat" className="w-10 h-10 rounded-full mr-3 object-cover" />
+                    <Avatar src={getChatPhoto(c)} alt="chat" className="w-10 h-10 mr-3" />
                     <span className="text-sm font-medium text-foreground truncate">{getChatName(c)}</span>
                   </label>
                 </li>

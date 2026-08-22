@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, increment, writeBatch, limit, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
-import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, CheckSquare, Image as ImageIcon, Trash2, Star, Download } from 'lucide-react';
+import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, CheckSquare, Image as ImageIcon, Trash2, Star, Download, MessageSquare } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
@@ -11,6 +11,7 @@ import GroupInfoPanel from './GroupInfoPanel';
 import ForwardModal from './ForwardModal';
 import MediaGalleryModal from './MediaGalleryModal';
 import ImagePreviewModal from './ImagePreviewModal';
+import { Avatar } from './ui/Avatar';
 import { copyImageToClipboard } from '../lib/clipboard';
 import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
 
@@ -886,7 +887,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               >
                 <div className="relative">
                   {chatAvatar ? (
-                    <img src={chatAvatar} alt={chatTitle} className="w-10 h-10 rounded-full object-cover" />
+                    <Avatar src={chatAvatar} alt={chatTitle} className="w-10 h-10" />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold">
                       {chatTitle.charAt(0)}
@@ -1009,7 +1010,9 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         {messagesLoaded && messages.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
             <div className="bg-surface/80 backdrop-blur-sm px-6 py-8 rounded-2xl flex flex-col items-center max-w-[280px] shadow-sm border border-border text-center">
-              <div className="text-4xl mb-4">👋</div>
+              <div className="w-16 h-16 bg-accent/10 text-accent rounded-full flex items-center justify-center mb-4">
+                <MessageSquare className="w-8 h-8" />
+              </div>
               <h3 className="text-foreground font-semibold mb-2">No messages yet</h3>
               <p className="text-muted-foreground text-sm">Say hello and start the conversation!</p>
             </div>

@@ -8,6 +8,7 @@ import {
   User,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { Avatar } from "./ui/Avatar";
 
 interface IconRailProps {
   onProfileClick: () => void;
@@ -16,7 +17,7 @@ interface IconRailProps {
 }
 
 export default function IconRail({ onProfileClick, onChatsClick, activeTab = "chats" }: IconRailProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,11 +68,11 @@ export default function IconRail({ onProfileClick, onChatsClick, activeTab = "ch
     {
       id: "profile",
       label: "Profile",
-      icon: currentUser?.photoURL ? (
-        <img
-          src={currentUser.photoURL}
-          className="w-8 h-8 shrink-0 rounded-full object-cover"
-          alt="Avatar"
+      icon: (userProfile?.photoURL || currentUser?.photoURL) ? (
+        <Avatar
+          src={userProfile?.photoURL || currentUser?.photoURL}
+          className="w-8 h-8"
+          alt={userProfile?.displayName || currentUser?.displayName || "Avatar"}
         />
       ) : (
         <div className="w-8 h-8 shrink-0 rounded-full bg-accent text-white flex items-center justify-center">

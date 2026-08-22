@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile } from '../types';
 import { format } from 'date-fns';
 import ImageCropperModal from './ImageCropperModal';
+import { Avatar } from './ui/Avatar';
 
 interface GroupInfoPanelProps {
   conversation: Conversation;
@@ -247,7 +248,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
             allUsers.map(user => (
               <div key={user.uid} className="flex items-center justify-between p-2 hover:bg-background rounded-lg">
                 <div className="flex items-center space-x-3">
-                  <img src={user.photoURL} alt={user.displayName} className="w-10 h-10 rounded-full" />
+                  <Avatar src={user.photoURL} alt={user.displayName} className="w-10 h-10" />
                   <span className="text-sm font-medium text-foreground">{user.displayName}</span>
                 </div>
                 <button 
@@ -277,11 +278,13 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
       {/* Hero Section */}
       <div className="flex flex-col items-center p-6 bg-surface border-b border-border">
         <div className="relative group mb-4">
-          <div className="w-32 h-32 rounded-full overflow-hidden bg-accent/10 flex items-center justify-center">
+          <div className="w-32 h-32 rounded-full overflow-hidden flex items-center justify-center">
             {conversation.groupPhoto ? (
-              <img src={conversation.groupPhoto} alt="Group" className="w-full h-full object-cover" />
+              <Avatar src={conversation.groupPhoto} alt="Group" className="w-32 h-32" />
             ) : (
-              <span className="text-4xl text-accent font-semibold">{conversation.groupName?.charAt(0)}</span>
+              <div className="w-full h-full bg-accent/10 flex items-center justify-center">
+                <span className="text-4xl text-accent font-semibold">{conversation.groupName?.charAt(0)}</span>
+              </div>
             )}
           </div>
           {isAdmin && (
@@ -398,7 +401,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
             return (
               <div key={uid} className="flex items-center justify-between p-4 hover:bg-background transition-colors group">
                 <div className="flex items-center space-x-3">
-                  <img src={participant.photoURL} alt={participant.displayName} className="w-10 h-10 rounded-full shrink-0" />
+                  <Avatar src={participant.photoURL} alt={participant.displayName} className="w-10 h-10 shrink-0" />
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">
                       {participant.displayName} {isMe && <span className="text-muted-foreground font-normal">(You)</span>}
