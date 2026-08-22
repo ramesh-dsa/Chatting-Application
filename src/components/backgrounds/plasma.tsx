@@ -16,6 +16,8 @@ interface PlasmaProps {
   targetFps?: number;
   /** Raymarch step count — lower is cheaper, less detailed. Default 60. */
   iterations?: number;
+  /** Respect reduced motion preference. */
+  reducedMotion?: boolean;
 }
 
 const hexToRgb = (hex: string): [number, number, number] => {
@@ -107,7 +109,7 @@ void main() {
 }`;
 };
 
-export const Plasma: React.FC<PlasmaProps> = ({
+export const Plasma = React.memo<PlasmaProps>(({
   color = "#ffffff",
   speed = 1,
   direction = "forward",
@@ -118,6 +120,7 @@ export const Plasma: React.FC<PlasmaProps> = ({
   maxDpr = 1.5,
   targetFps = 60,
   iterations = 60,
+  reducedMotion = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mousePos = useRef({ x: 0, y: 0 });
@@ -128,8 +131,9 @@ export const Plasma: React.FC<PlasmaProps> = ({
     const containerEl = containerRef.current;
 
     const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      reducedMotion ||
+      (typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 
     const useCustomColor = color ? 1.0 : 0.0;
     const customColorRgb = color ? hexToRgb(color) : [1, 1, 1];
@@ -234,11 +238,17 @@ export const Plasma: React.FC<PlasmaProps> = ({
     const loop = (t: number) => {
       if (contextLost || !isVisible || !tabVisible) return;
 
-      if (t - lastFrameTime < frameInterval) {
-        raf = requestAnimationFrame(loop);
-        return;
+      // Do not manually throttle if target is 60fps or higher to avoid sub-millisecond frame drops
+      if (targetFps < 60) {
+        const elapsed = t - lastFrameTime;
+        if (elapsed < frameInterval) {
+          raf = requestAnimationFrame(loop);
+          return;
+        }
+        lastFrameTime = t - (elapsed % frameInterval);
+      } else {
+        lastFrameTime = t;
       }
-      lastFrameTime = t;
 
       if (pendingMouse.current) {
         mousePos.current = pendingMouse.current;
@@ -344,6 +354,7 @@ export const Plasma: React.FC<PlasmaProps> = ({
     maxDpr,
     targetFps,
     iterations,
+    reducedMotion,
   ]);
 
   return (
@@ -352,6 +363,6 @@ export const Plasma: React.FC<PlasmaProps> = ({
       className="w-full h-full relative overflow-hidden"
     />
   );
-};
+});
 
 export default Plasma;

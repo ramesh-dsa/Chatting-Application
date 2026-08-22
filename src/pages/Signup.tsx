@@ -103,7 +103,7 @@ export default function Signup() {
   };
 
   return (
-    <div className="relative z-10 w-[92vw] max-w-[460px] p-6 sm:p-10 md:p-12 backdrop-blur-3xl bg-black/60 border border-white/20 rounded-[2.5rem] shadow-[0_25px_60px_rgba(0,0,0,0.9)] overflow-hidden">
+    <div className="relative z-10 w-[92vw] max-w-[460px] p-6 sm:p-10 md:p-12 backdrop-blur-xl md:backdrop-blur-3xl bg-black/70 md:bg-black/60 border border-white/20 rounded-[2.5rem] shadow-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.9)] overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2/3 h-[2px] bg-gradient-to-r from-transparent via-purple-400 to-transparent shadow-[0_0_15px_rgba(168,85,247,0.8)]"></div>
 
         <div className="text-center mb-10 relative z-20">

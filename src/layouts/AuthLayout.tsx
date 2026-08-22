@@ -29,6 +29,14 @@ export default function AuthLayout() {
   const [direction, setDirection] = useState(1);
   const prevPath = useRef(location.pathname);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     if (prevPath.current !== location.pathname) {
@@ -50,10 +58,11 @@ export default function AuthLayout() {
           color="#8B5CF6"
           speed={1.0}
           mouseInteractive={false}
-          renderScale={0.7}
-          maxDpr={1.5}
+          renderScale={isMobile ? 0.45 : 0.7}
+          maxDpr={isMobile ? 1.25 : 1.5}
           targetFps={60}
-          iterations={60}
+          iterations={isMobile ? 45 : 60}
+          reducedMotion={shouldReduceMotion || false}
         />
       </div>
 
