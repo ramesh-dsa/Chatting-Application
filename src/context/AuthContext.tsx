@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { ref, get, set, update, onValue, off } from 'firebase/database';
 import { auth, db } from '../lib/firebase';
 import type { UserProfile } from '../types';
 
@@ -39,23 +39,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (user) {
-        const userRef = doc(db, 'users', user.uid);
+        const userRef = ref(db, `users/${user.uid}`);
         const uid = user.uid;
         
         // Fetch profile and update presence in background
-        getDoc(userRef).then((userSnap) => {
+        get(userRef).then((snapshot) => {
           // Bail out if we unmounted or the signed-in user changed while fetching
           if (cancelled || auth.currentUser?.uid !== uid) return;
 
           let profileData: UserProfile;
           
-          if (userSnap.exists()) {
-            profileData = userSnap.data() as UserProfile;
+          if (snapshot.exists()) {
+            profileData = snapshot.val() as UserProfile;
             profileData.isOnline = true;
             setUserProfile(profileData);
             
             // Update online status
-            updateDoc(userRef, {
+            update(userRef, {
               isOnline: true,
               lastSeen: Date.now()
             }).catch(console.error);
@@ -69,16 +69,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               lastSeen: Date.now()
             };
             setUserProfile(profileData);
-            setDoc(userRef, profileData).catch(console.error);
+            set(userRef, profileData).catch(console.error);
           }
 
           if (cancelled || auth.currentUser?.uid !== uid) return;
 
-          unsubscribeDoc = onSnapshot(userRef, (snap) => {
+          const onValueChange = onValue(userRef, (snap) => {
             if (snap.exists()) {
-              setUserProfile(snap.data() as UserProfile);
+              setUserProfile(snap.val() as UserProfile);
             }
           });
+
+          unsubscribeDoc = () => off(userRef, 'value', onValueChange);
         }).catch(console.error);
       } else {
         setUserProfile(null);

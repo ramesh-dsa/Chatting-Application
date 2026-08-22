@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
+import { ref, onValue, onDisconnect, set, serverTimestamp } from 'firebase/database';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
 export const usePresence = () => {
   const { currentUser } = useAuth();
@@ -11,54 +9,28 @@ export const usePresence = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const userRef = doc(db, 'users', currentUser.uid);
+    const userStatusRef = ref(db, `users/${currentUser.uid}`);
+    const connectedRef = ref(db, '.info/connected');
 
-    const updatePresence = async (isOnline: boolean) => {
-      try {
-        await updateDoc(userRef, {
-          isOnline,
-          lastSeen: Date.now()
+    const unsubscribe = onValue(connectedRef, (snap) => {
+      if (snap.val() === true) {
+        // We're connected (or reconnected)! Set up our disconnect operations
+        
+        // When I disconnect, update the last time I was seen online
+        onDisconnect(userStatusRef).update({
+          isOnline: false,
+          lastSeen: serverTimestamp()
+        }).then(() => {
+          // The onDisconnect operation has been queued on the server
+          // Now set our status to online
+          set(ref(db, `users/${currentUser.uid}/isOnline`), true);
+          set(ref(db, `users/${currentUser.uid}/lastSeen`), serverTimestamp());
         });
-      } catch (error) {
-        console.error('Failed to update presence:', error);
       }
-    };
-
-    // Periodic heartbeat to keep presence fresh
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        updatePresence(true);
-      }
-    }, HEARTBEAT_INTERVAL);
-
-    // Handle visibility changes (switching tabs)
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // We consider them offline if they hide the tab, or we can just let it timeout
-        // For a tighter presence, we'll mark them offline when the tab is hidden
-        updatePresence(false);
-      } else {
-        updatePresence(true);
-      }
-    };
-
-    // Handle window closing
-    const handleBeforeUnload = () => {
-      updatePresence(false);
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    // Set online immediately when the hook mounts
-    updatePresence(true);
+    });
 
     return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      // Try to set offline on unmount (note: async calls in unmount aren't guaranteed to finish)
-      updatePresence(false);
+      unsubscribe();
     };
   }, [currentUser]);
 };

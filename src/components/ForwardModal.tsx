@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
+import { ref, get, child, update, push, increment } from 'firebase/database';
+import { stripHTML } from '../utils/sanitize';
 import { X, Search, Check } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -26,18 +27,19 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
     const fetchConversations = async () => {
       if (!userProfile) return;
       try {
-        const q = query(
-          collection(db, 'conversations'),
-          where('participants', 'array-contains', userProfile.uid)
-        );
-        const snapshot = await getDocs(q);
+        const snapshot = await get(child(ref(db), 'conversations'));
         const convosList: Conversation[] = [];
-        snapshot.forEach((doc) => {
-          convosList.push({ id: doc.id, ...doc.data() } as Conversation);
-        });
+        if (snapshot.exists()) {
+          snapshot.forEach((childSnapshot) => {
+            const convo = { id: childSnapshot.key, ...childSnapshot.val() } as Conversation;
+            if (convo.participants && convo.participants[userProfile.uid]) {
+              convosList.push(convo);
+            }
+          });
+        }
         
         // Sort by updatedAt descending
-        convosList.sort((a, b) => b.updatedAt - a.updatedAt);
+        convosList.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
         setConversations(convosList);
       } catch (err) {
         console.error("Error fetching conversations:", err);
@@ -62,7 +64,7 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
 
   const getChatName = (convo: Conversation) => {
     if (convo.type === 'group') return convo.groupName || 'Unnamed Group';
-    const otherId = convo.participants.find(id => id !== userProfile?.uid);
+    const otherId = Object.keys(convo.participants).find(id => id !== userProfile?.uid);
     return otherId && usersMap[otherId] ? usersMap[otherId].displayName : 'Saved Messages';
   };
 
@@ -70,7 +72,7 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
     if (convo.type === 'group') {
       return convo.groupPhoto || '';
     }
-    const otherId = convo.participants.find(id => id !== userProfile?.uid);
+    const otherId = Object.keys(convo.participants).find(id => id !== userProfile?.uid);
     return otherId && usersMap[otherId]?.photoURL 
       ? usersMap[otherId].photoURL 
       : '';
@@ -95,11 +97,11 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
         for (const msg of messagesToForward) {
           const { id: _id, readBy: _readBy, deliveredTo: _deliveredTo, ...msgData } = msg;
           
-          await addDoc(collection(db, `conversations/${targetChatId}/messages`), {
+          await push(ref(db, `conversations/${targetChatId}/messages`), {
             ...msgData,
             senderId: userProfile.uid,
             timestamp: Date.now(),
-            readBy: [userProfile.uid],
+            readBy: [{ uid: userProfile.uid, timestamp: Date.now() }],
             forwarded: true
           });
 
@@ -116,15 +118,15 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
         const targetConvo = conversations.find(c => c.id === targetChatId);
         const unreadIncrements: Record<string, any> = {};
         if (targetConvo) {
-          targetConvo.participants.forEach(pid => {
+          Object.keys(targetConvo.participants).forEach(pid => {
             if (pid !== userProfile.uid) {
-              unreadIncrements[`unreadCounts.${pid}`] = increment(messagesToForward.length);
+              unreadIncrements[`unreadCounts/${pid}`] = increment(messagesToForward.length);
             }
           });
         }
 
         // Update the target conversation document
-        await updateDoc(doc(db, 'conversations', targetChatId), {
+        await update(ref(db, `conversations/${targetChatId}`), {
           lastMessage: lastMessageText,
           lastMessageTimestamp: Date.now(),
           updatedAt: Date.now(),
@@ -165,7 +167,10 @@ export default function ForwardModal({ selectedMessages, usersMap, onClose, onFo
               type="text" 
               placeholder="Search chats..." 
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value.slice(0, 100);
+                setSearchQuery(stripHTML(val));
+              }}
               className="w-full bg-background border border-border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
             />
           </div>

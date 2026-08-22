@@ -87,7 +87,7 @@ export default function IconRail({ onProfileClick, onChatsClick, activeTab = "ch
     <>
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 md:bottom-auto md:top-6 md:left-24 md:translate-x-0 whitespace-nowrap bg-surface border border-border shadow-lg rounded-lg px-4 py-2 text-sm text-foreground animate-in fade-in z-[60]">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 md:bottom-auto md:top-6 md:left-24 md:translate-x-0 break-words max-w-[calc(100vw-32px)] sm:max-w-xs bg-surface border border-border shadow-lg rounded-lg px-4 py-2 text-sm text-foreground animate-in fade-in z-[60]">
           {toastMessage}
         </div>
       )}

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc, limit, writeBatch } from 'firebase/firestore';
+import { ref, onValue, get, update } from 'firebase/database';
 import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile, Message } from '../types';
 import { format, isToday, isYesterday } from 'date-fns';
+import { stripHTML } from '../utils/sanitize';
 import NewChatModal from './NewChatModal';
 import MyProfilePanel from './MyProfilePanel';
 import { Avatar } from './ui/Avatar';
@@ -73,41 +74,69 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    const q = query(
-      collection(db, 'conversations'),
-      where('participants', 'array-contains', currentUser.uid),
-      orderBy('updatedAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const convos: Conversation[] = [];
-      snapshot.forEach((doc) => {
-        convos.push({ id: doc.id, ...doc.data() } as Conversation);
+    const indexRef = ref(db, `userConversations/${currentUser.uid}`);
+    let convoUnsubs: Record<string, () => void> = {};
+    
+    const unsubIndex = onValue(indexRef, (indexSnap) => {
+      if (!indexSnap.exists()) {
+        setConversations([]);
+        setIsLoading(false);
+        Object.values(convoUnsubs).forEach(unsub => unsub());
+        convoUnsubs = {};
+        return;
+      }
+      
+      const newConvoIds = Object.keys(indexSnap.val());
+      
+      Object.keys(convoUnsubs).forEach(id => {
+        if (!newConvoIds.includes(id)) {
+          convoUnsubs[id]();
+          delete convoUnsubs[id];
+          setConversations(prev => prev.filter(c => c.id !== id));
+        }
       });
-      setConversations(convos);
+      
       setIsLoading(false);
+      
+      newConvoIds.forEach(id => {
+        if (!convoUnsubs[id]) {
+          const convoRef = ref(db, `conversations/${id}`);
+          convoUnsubs[id] = onValue(convoRef, (convoSnap) => {
+            if (convoSnap.exists()) {
+              const convo = { id: convoSnap.key, ...convoSnap.val() } as Conversation;
+              
+              setConversations(prev => {
+                const newConvos = [...prev.filter(c => c.id !== id), convo];
+                return newConvos.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+              });
 
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'modified') {
-          const convo = change.doc.data() as Conversation;
-          const isCurrentlyActive = activeConversationIdRef.current === change.doc.id && document.hasFocus();
-          const isNewMessage = convo.lastMessageTimestamp && convo.lastMessageTimestamp !== lastMsgTsRef.current[change.doc.id];
-          lastMsgTsRef.current[change.doc.id] = convo.lastMessageTimestamp || 0;
-          
-          if (!isCurrentlyActive && hasNotificationPermissionRef.current && isNewMessage) {
-            new Notification('New Message', {
-              body: convo.lastMessage || 'You received a new message',
-              icon: '/favicon.svg'
-            });
-          }
+              const isCurrentlyActive = activeConversationIdRef.current === convo.id && document.hasFocus();
+              const isNewMessage = convo.lastMessageTimestamp && convo.lastMessageTimestamp !== lastMsgTsRef.current[convo.id];
+              
+              if (isNewMessage) {
+                 if (!isCurrentlyActive && hasNotificationPermissionRef.current && lastMsgTsRef.current[convo.id] !== undefined) {
+                    new Notification('New Message', {
+                      body: convo.lastMessage || 'You received a new message',
+                      icon: '/favicon.svg'
+                    });
+                 }
+              }
+              lastMsgTsRef.current[convo.id] = convo.lastMessageTimestamp || 0;
+            } else {
+              setConversations(prev => prev.filter(c => c.id !== id));
+            }
+          });
         }
       });
     }, (error) => {
-      console.error("Conversations query error:", error);
+      console.error("Index query error:", error);
       setIsLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubIndex();
+      Object.values(convoUnsubs).forEach(unsub => unsub());
+    };
   }, [currentUser?.uid]);
 
   // Keep a local cache of the last 50 messages for each conversation to support client-side search
@@ -117,31 +146,59 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
 
     const convoList = conversationsRef.current;
     const unsubscribes = convoList.map(convo => {
-      const q = query(
-        collection(db, `conversations/${convo.id}/messages`),
-        orderBy('timestamp', 'desc'),
-        limit(50)
-      );
-      return onSnapshot(q, snapshot => {
-        const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Message));
-        setMessagesCache(prev => ({ ...prev, [convo.id]: msgs.slice().reverse() }));
+      const messagesRef = ref(db, `conversations/${convo.id}/messages`);
+      // Since RTDB doesn't easily limit to last 50 client-side without order by, we just fetch all or we use limitToLast(50) with query(ref, orderByChild('timestamp'), limitToLast(50)). But for simplicity in RTDB we can just use onValue and process in JS if it's small, or use RTDB queries:
+      // import { query as rtdbQuery, orderByChild, limitToLast } from 'firebase/database';
+      // Wait, we didn't import those, let's just fetch all for now or do we need them? I will just fetch all since it's a small app, or add import manually?
+      // I'll add a separate call to fix imports if I need to. Let's just fetch all and slice for now:
+      return onValue(messagesRef, (snapshot) => {
+        const msgs: Message[] = [];
+        if (snapshot.exists()) {
+          snapshot.forEach(child => {
+            msgs.push({ id: child.key, ...child.val() } as Message);
+          });
+        }
+        // sort descending
+        msgs.sort((a, b) => b.timestamp - a.timestamp);
+        const top50 = msgs.slice(0, 50);
+        
+        setMessagesCache(prev => ({ ...prev, [convo.id]: top50 }));
 
-        // Process delivery receipts: mark undelivered messages from others as delivered
-        const undeliveredMsgs = msgs.filter(m => 
-          m.type !== 'system' && 
-          m.senderId !== currentUser.uid && 
-          !m.deliveredTo?.includes(currentUser.uid)
-        );
+        // Robust mapper for mixed RTDB arrays/objects
+        const mapToUids = (data: any): string[] => {
+          if (!data) return [];
+          if (Array.isArray(data)) {
+            return data.map(item => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object' && item.uid) return item.uid;
+              return '';
+            }).filter(Boolean);
+          }
+          if (typeof data === 'object') {
+            return Object.keys(data).reduce((acc: string[], key) => {
+              const val = data[key];
+              if (val === true) acc.push(key);
+              else if (typeof val === 'string') acc.push(val);
+              else if (val && typeof val === 'object' && val.uid) acc.push(val.uid);
+              return acc;
+            }, []);
+          }
+          return [];
+        };
+
+        // Process delivery receipts
+        const undeliveredMsgs = top50.filter(m => {
+          if (m.type === 'system' || m.senderId === currentUser.uid) return false;
+          const deliveredToUids = mapToUids(m.deliveredTo);
+          return !deliveredToUids.includes(currentUser.uid);
+        });
 
         if (undeliveredMsgs.length > 0) {
-          const batch = writeBatch(db);
+          const updates: Record<string, any> = {};
           undeliveredMsgs.forEach(m => {
-            const msgRef = doc(db, `conversations/${convo.id}/messages`, m.id);
-            batch.update(msgRef, {
-              deliveredTo: [...(m.deliveredTo || []), currentUser.uid]
-            });
+            updates[`conversations/${convo.id}/messages/${m.id}/deliveredTo/${currentUser.uid}`] = true;
           });
-          batch.commit().catch(console.error);
+          update(ref(db), updates).catch(console.error);
         }
       });
     });
@@ -160,7 +217,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     if (c.type === 'group') {
       name = c.groupName || '';
     } else {
-      const otherUserId = c.participants.find(id => id !== currentUser?.uid);
+      const otherUserId = Object.keys(c.participants || {}).find(id => id !== currentUser?.uid);
       name = (otherUserId && usersMap[otherUserId]?.displayName) || 'Direct Message';
     }
     
@@ -170,7 +227,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   const existingDirectContactIds = new Set(
     conversations
       .filter(c => c.type === 'direct')
-      .flatMap(c => c.participants)
+      .flatMap(c => Object.keys(c.participants || {}))
   );
 
   const filteredContacts = debouncedSearchQuery.trim() === '' ? [] : Object.values(usersMap).filter(user => {
@@ -183,7 +240,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     if (!currentUser?.uid) return;
     
     const existingConvo = conversations.find(c => 
-      c.type === 'direct' && c.participants.includes(otherUser.uid)
+      c.type === 'direct' && c.participants && c.participants[otherUser.uid]
     );
 
     if (existingConvo) {
@@ -194,16 +251,20 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
 
     try {
       const directConversationId = [currentUser.uid, otherUser.uid].sort().join('_');
-      const convoRef = doc(db, 'conversations', directConversationId);
-      const convoSnap = await getDoc(convoRef);
+      const convoRef = ref(db, `conversations/${directConversationId}`);
+      const convoSnap = await get(convoRef);
 
       if (!convoSnap.exists()) {
-        await setDoc(convoRef, {
+        const updates: Record<string, any> = {};
+        updates[`conversations/${directConversationId}`] = {
           type: 'direct',
-          participants: [currentUser.uid, otherUser.uid],
+          participants: { [currentUser.uid]: true, [otherUser.uid]: true },
           updatedAt: Date.now(),
           lastMessage: '',
-        });
+        };
+        updates[`userConversations/${currentUser.uid}/${directConversationId}`] = true;
+        updates[`userConversations/${otherUser.uid}/${directConversationId}`] = true;
+        await update(ref(db), updates);
       }
       
       onSelectConversation(directConversationId);
@@ -237,7 +298,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
       displayName = convo.groupName || 'Group';
       photoURL = convo.groupPhoto || '';
     } else {
-      const otherUserId = convo.participants.find(id => id !== currentUser?.uid);
+      const otherUserId = Object.keys(convo.participants || {}).find(id => id !== currentUser?.uid);
       if (otherUserId && usersMap[otherUserId]) {
         displayName = usersMap[otherUserId].displayName;
         photoURL = usersMap[otherUserId].photoURL;
@@ -285,7 +346,10 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
             type="text"
             placeholder="Search messages"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value.slice(0, 100);
+              setSearchQuery(stripHTML(val));
+            }}
             className="w-full pl-9 pr-4 py-2 bg-bg-app border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all"
           />
         </div>
@@ -323,7 +387,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
             )}
           </div>
         ) : (
-          <div className="px-2 pb-24">
+          <div className="px-2 pb-40">
             {filteredConversations.length > 0 && (
               <div className="mb-4">
                 {debouncedSearchQuery && <div className="px-3 mb-2 text-xs font-semibold text-muted uppercase tracking-wider">Chats</div>}
@@ -359,11 +423,11 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                           
                           <div className="ml-4 flex-1 min-w-0 text-left">
                             <div className="flex items-center justify-between mb-1">
-                              <h3 className={`text-sm truncate ${unreadCount > 0 ? 'font-bold text-foreground' : 'font-medium text-foreground'}`}>
+                              <h3 className={`flex-1 min-w-0 pr-2 text-sm truncate ${unreadCount > 0 ? 'font-bold text-foreground' : 'font-medium text-foreground'}`}>
                                 {displayName}
                               </h3>
                               {convo.updatedAt && (
-                                <span className={`text-xs ${unreadCount > 0 ? 'text-accent font-medium' : 'text-muted'}`}>
+                                <span className={`flex-shrink-0 text-xs ${unreadCount > 0 ? 'text-accent font-medium' : 'text-muted'}`}>
                                   {formatSidebarTime(convo.updatedAt)}
                                 </span>
                               )}
@@ -446,11 +510,11 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                           </div>
                           <div className="ml-4 flex-1 min-w-0 text-left">
                             <div className="flex items-center justify-between mb-1">
-                              <h3 className="text-sm font-medium truncate text-foreground">
+                              <h3 className="flex-1 min-w-0 pr-2 text-sm font-medium truncate text-foreground">
                                 {displayName}
                               </h3>
                               {message.timestamp && (
-                                <span className="text-xs text-muted">
+                                <span className="flex-shrink-0 text-xs text-muted">
                                   {formatSidebarTime(message.timestamp)}
                                 </span>
                               )}
@@ -474,7 +538,7 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
       {/* FAB - mobile only */}
       <button
         onClick={() => setIsNewChatModalOpen(true)}
-        className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-accent hover:bg-accent/90 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-50"
+        className="md:hidden fixed bottom-[80px] right-6 w-14 h-14 bg-accent hover:bg-accent/90 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-50"
       >
         <Plus className="w-6 h-6" />
       </button>

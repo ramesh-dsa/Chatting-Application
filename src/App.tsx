@@ -36,6 +36,8 @@ function PushNotificationsManager({ children }: { children: React.ReactNode }) {
   );
 }
 
+import AuthLayout from './layouts/AuthLayout';
+
 function App() {
   return (
     <AuthProvider>
@@ -43,8 +45,10 @@ function App() {
         <PushNotificationsManager>
           <Router>
             <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
+              <Route element={<AuthLayout />}>
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+              </Route>
               <Route 
                 path="/" 
                 element={

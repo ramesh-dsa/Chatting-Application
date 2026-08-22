@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { ref, update } from 'firebase/database';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { getFcmToken, onForegroundMessage, isPushSupported } from '../lib/messaging';
@@ -20,13 +20,13 @@ export function usePushNotifications() {
     if (!uid || !isPushSupported()) return;
     let cancelled = false;
     let unsubMessage: (() => void) | null = null;
-    const userRef = doc(db, 'users', uid);
+    const userRef = ref(db, `users/${uid}`);
 
     (async () => {
       const token = await getFcmToken();
       if (cancelled || !token) return;
       tokenRef.current = token;
-      await updateDoc(userRef, { fcmTokens: arrayUnion(token) }).catch(console.error);
+      await update(userRef, { [`fcmTokens/${token}`]: true }).catch(console.error);
 
       if (cancelled) return;
       unsubMessage = onForegroundMessage((payload) => {
@@ -45,7 +45,7 @@ export function usePushNotifications() {
       const t = tokenRef.current;
       if (t) {
         tokenRef.current = null;
-        updateDoc(userRef, { fcmTokens: arrayRemove(t) }).catch(() => {});
+        update(userRef, { [`fcmTokens/${t}`]: null }).catch(() => {});
       }
     };
   }, [uid]);

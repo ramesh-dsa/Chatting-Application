@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { ArrowLeft, Camera, Edit2, Check } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { ref, update } from 'firebase/database';
 import { useAuth } from '../context/AuthContext';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import ImageCropperModal from './ImageCropperModal';
-import { validatePassword } from '../utils/validatePassword';
+import { validatePassword, stripHTML } from '../utils/sanitize';
 import { Avatar } from './ui/Avatar';
 
 interface MyProfilePanelProps {
@@ -33,26 +33,56 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [profileError, setProfileError] = useState('');
 
   const handleUpdateName = async () => {
+    setProfileError('');
     if (!userProfile) return;
-    if (!newName.trim() || newName.trim() === userProfile.displayName) {
+    
+    let cleanedName = newName.trim();
+    if (!cleanedName) {
+      setProfileError('Display name is required');
+      return;
+    }
+    if (cleanedName.length > 50) {
+      setProfileError('Display name must be 50 characters or less');
+      return;
+    }
+    cleanedName = stripHTML(cleanedName);
+    
+    if (cleanedName === userProfile.displayName) {
       setIsEditingName(false);
       return;
     }
     
-    await updateDoc(doc(db, 'users', userProfile.uid), {
-      displayName: newName.trim()
+    await update(ref(db, `users/${userProfile.uid}`), {
+      displayName: cleanedName
     });
     setIsEditingName(false);
   };
 
   const handleUpdateAbout = async () => {
+    setProfileError('');
     if (!userProfile) return;
-    if (!newAbout.trim()) return;
     
-    await updateDoc(doc(db, 'users', userProfile.uid), {
-      statusMessage: newAbout.trim()
+    let cleanedAbout = newAbout.trim();
+    if (!cleanedAbout) {
+      setProfileError('Bio is required');
+      return;
+    }
+    if (cleanedAbout.length > 150) {
+      setProfileError('Bio must be 150 characters or less');
+      return;
+    }
+    cleanedAbout = stripHTML(cleanedAbout);
+    
+    if (cleanedAbout === userProfile.statusMessage) {
+      setIsEditingAbout(false);
+      return;
+    }
+    
+    await update(ref(db, `users/${userProfile.uid}`), {
+      statusMessage: cleanedAbout
     });
     setIsEditingAbout(false);
   };
@@ -99,7 +129,7 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
       const data = await response.json();
       const url = data.secure_url;
 
-      await updateDoc(doc(db, 'users', userProfile.uid), {
+      await update(ref(db, `users/${userProfile.uid}`), {
         photoURL: url
       });
     } catch (error) {
@@ -116,9 +146,9 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
     setPasswordError('');
     setPasswordSuccess('');
 
-    const passwordErrorMsg = validatePassword(newPassword);
-    if (passwordErrorMsg) {
-      setPasswordError(passwordErrorMsg);
+    const { valid, errors } = validatePassword(newPassword);
+    if (!valid) {
+      setPasswordError(`Password must contain: ${errors.join(', ')}`);
       return;
     }
 
@@ -217,8 +247,14 @@ export default function MyProfilePanel({ onClose }: MyProfilePanelProps) {
             This is not your username or pin. This name will be visible to your contacts.
           </p>
         </div>
+        
+        {profileError && (
+          <div className="mx-6 p-3 mb-2 bg-destructive/10 text-destructive text-sm rounded-lg border border-destructive/20 text-center">
+            {profileError}
+          </div>
+        )}
 
-        {/* About Field */}
+        {/* Profile Info */}
         <div className="bg-surface rounded-xl p-4 shadow-sm border border-border">
           <p className="text-xs font-semibold text-accent mb-1 uppercase tracking-wider">About</p>
           {isEditingAbout ? (

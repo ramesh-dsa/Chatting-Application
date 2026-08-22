@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import type { PollData, PollOption } from '../types';
+import { stripHTML } from '../utils/sanitize';
 
 interface CreatePollModalProps {
   isOpen: boolean;
@@ -43,8 +44,19 @@ export default function CreatePollModal({ isOpen, onClose, onCreatePoll }: Creat
       setError('Please enter a question');
       return;
     }
+    
+    const cleanQuestion = stripHTML(question.trim());
+    if (cleanQuestion.length > 200) {
+      setError('Question is too long (max 200 characters)');
+      return;
+    }
 
-    const validOptions = options.filter(opt => opt.trim().length > 0);
+    const validOptions = options.map(opt => stripHTML(opt.trim())).filter(opt => opt.length > 0);
+    
+    if (validOptions.some(opt => opt.length > 100)) {
+      setError('One or more options are too long (max 100 characters)');
+      return;
+    }
     
     if (validOptions.length < 2) {
       setError('Please provide at least 2 options');
@@ -60,12 +72,12 @@ export default function CreatePollModal({ isOpen, onClose, onCreatePoll }: Creat
 
     const pollOptions: PollOption[] = validOptions.map((text, index) => ({
       id: `opt-${Date.now()}-${index}`,
-      text: text.trim(),
+      text: text,
       voters: []
     }));
 
     onCreatePoll({
-      question: question.trim(),
+      question: cleanQuestion,
       options: pollOptions,
       multipleAnswers
     });

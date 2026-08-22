@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { X, Camera, Edit2, UserPlus, LogOut, Check, Shield, ShieldOff } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { doc, updateDoc, arrayRemove, arrayUnion, collection, getDocs, addDoc } from 'firebase/firestore';
+import { ref, update, push, get, child } from 'firebase/database';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile } from '../types';
 import { format } from 'date-fns';
 import ImageCropperModal from './ImageCropperModal';
 import { Avatar } from './ui/Avatar';
+import { stripHTML } from '../utils/sanitize';
 
 interface GroupInfoPanelProps {
   conversation: Conversation;
@@ -25,28 +26,37 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [groupError, setGroupError] = useState('');
 
-  const isAdmin = userProfile ? conversation.admins?.includes(userProfile.uid) : false;
+  const safeAdmins = Array.isArray(conversation.admins) 
+    ? conversation.admins 
+    : (conversation.admins && typeof conversation.admins === 'object' 
+        ? Object.values(conversation.admins) 
+        : []);
+
+  const isAdmin = userProfile ? safeAdmins.includes(userProfile.uid) : false;
   const creator = conversation.createdBy ? usersMap[conversation.createdBy] : null;
 
   useEffect(() => {
     if (showAddMember) {
       const fetchUsers = async () => {
-        const snapshot = await getDocs(collection(db, 'users'));
-        const usersList: UserProfile[] = [];
-        snapshot.forEach(doc => {
-          if (!conversation.participants.includes(doc.id)) {
-            usersList.push(doc.data() as UserProfile);
-          }
-        });
-        setAllUsers(usersList);
+        const snapshot = await get(child(ref(db), 'users'));
+        if (snapshot.exists()) {
+          const usersList: UserProfile[] = [];
+          snapshot.forEach(childSnapshot => {
+            if (!conversation.participants[childSnapshot.key as string]) {
+              usersList.push(childSnapshot.val() as UserProfile);
+            }
+          });
+          setAllUsers(usersList);
+        }
       };
       fetchUsers();
     }
   }, [showAddMember, conversation.participants]);
 
   const handleSystemMessage = async (text: string) => {
-    await addDoc(collection(db, `conversations/${conversation.id}/messages`), {
+    await push(ref(db, `conversations/${conversation.id}/messages`), {
       senderId: null,
       type: 'system',
       text,
@@ -56,25 +66,49 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
   };
 
   const handleUpdateName = async () => {
-    if (!newName.trim() || newName.trim() === conversation.groupName) {
+    setGroupError('');
+    let cleanedName = newName.trim();
+    if (!cleanedName) {
+      setGroupError('Group name is required');
+      return;
+    }
+    if (cleanedName.length > 50) {
+      setGroupError('Group name must be 50 characters or less');
+      return;
+    }
+    cleanedName = stripHTML(cleanedName);
+
+    if (cleanedName === conversation.groupName) {
       setIsEditingName(false);
       return;
     }
-    await updateDoc(doc(db, 'conversations', conversation.id), {
-      groupName: newName.trim(),
+    await update(ref(db, `conversations/${conversation.id}`), {
+      groupName: cleanedName,
       updatedAt: Date.now()
     });
-    await handleSystemMessage(`${userProfile?.displayName} changed the group name to '${newName.trim()}'`);
+    await handleSystemMessage(`${userProfile?.displayName} changed the group name to '${cleanedName}'`);
     setIsEditingName(false);
   };
 
   const handleUpdateDescription = async () => {
-    if (!newDescription.trim() || newDescription.trim() === conversation.description) {
+    setGroupError('');
+    let cleanedDesc = newDescription.trim();
+    if (!cleanedDesc) {
+      setGroupError('Description is required');
+      return;
+    }
+    if (cleanedDesc.length > 150) {
+      setGroupError('Description must be 150 characters or less');
+      return;
+    }
+    cleanedDesc = stripHTML(cleanedDesc);
+
+    if (cleanedDesc === conversation.description) {
       setIsEditingDescription(false);
       return;
     }
-    await updateDoc(doc(db, 'conversations', conversation.id), {
-      description: newDescription.trim(),
+    await update(ref(db, `conversations/${conversation.id}`), {
+      description: cleanedDesc,
       updatedAt: Date.now()
     });
     await handleSystemMessage(`${userProfile?.displayName} changed the group description`);
@@ -123,7 +157,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
       const data = await response.json();
       const url = data.secure_url;
 
-      await updateDoc(doc(db, 'conversations', conversation.id), {
+      await update(ref(db, `conversations/${conversation.id}`), {
         groupPhoto: url,
         updatedAt: Date.now()
       });
@@ -139,21 +173,25 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
     if (!isAdmin) return;
     if (!confirm(`Remove ${name} from group?`)) return;
 
-    const isRemovedAdmin = conversation.admins?.includes(uid);
-    if (isRemovedAdmin && conversation.admins && conversation.admins.length <= 1) {
+    const isRemovedAdmin = safeAdmins.includes(uid);
+    if (isRemovedAdmin && safeAdmins.length <= 1) {
       alert("A group must have at least one admin. Demote the admin first.");
       return;
     }
 
+    const newParticipants = { ...conversation.participants };
+    delete newParticipants[uid];
+    
     const updates: any = {
-      participants: arrayRemove(uid),
-      updatedAt: Date.now()
+      [`conversations/${conversation.id}/participants`]: newParticipants,
+      [`conversations/${conversation.id}/updatedAt`]: Date.now(),
+      [`userConversations/${uid}/${conversation.id}`]: null
     };
     if (isRemovedAdmin) {
-      updates.admins = arrayRemove(uid);
+      updates[`conversations/${conversation.id}/admins`] = safeAdmins.filter(id => id !== uid) || [];
     }
 
-    await updateDoc(doc(db, 'conversations', conversation.id), updates);
+    await update(ref(db), updates);
     await handleSystemMessage(`${userProfile?.displayName} removed ${name}`);
   };
 
@@ -161,8 +199,10 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
     if (!isAdmin) return;
     try {
       const name = usersMap[uid]?.displayName || 'A member';
-      await updateDoc(doc(db, 'conversations', conversation.id), {
-        admins: arrayUnion(uid)
+      const newAdmins = [...(conversation.admins || [])];
+      if (!newAdmins.includes(uid)) newAdmins.push(uid);
+      await update(ref(db, `conversations/${conversation.id}`), {
+        admins: newAdmins
       });
       await handleSystemMessage(`${userProfile?.displayName} made ${name} an admin`);
     } catch (error) {
@@ -174,15 +214,15 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
   const handleRemoveAdmin = async (uid: string) => {
     if (!isAdmin) return;
     
-    if (conversation.admins && conversation.admins.length <= 1) {
+    if (safeAdmins.length <= 1) {
       alert("A group must have at least one admin.");
       return;
     }
 
     try {
       const name = usersMap[uid]?.displayName || 'A member';
-      await updateDoc(doc(db, 'conversations', conversation.id), {
-        admins: arrayRemove(uid)
+      await update(ref(db, `conversations/${conversation.id}`), {
+        admins: safeAdmins.filter(id => id !== uid) || []
       });
       await handleSystemMessage(`${userProfile?.displayName} removed ${name} as admin`);
     } catch (error) {
@@ -193,10 +233,15 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
 
   const handleAddMember = async (uid: string, name: string) => {
     if (!isAdmin) return;
-    await updateDoc(doc(db, 'conversations', conversation.id), {
-      participants: arrayUnion(uid),
-      updatedAt: Date.now()
-    });
+    const newParticipants = { ...conversation.participants };
+    newParticipants[uid] = true;
+    
+    const updates: any = {
+      [`conversations/${conversation.id}/participants`]: newParticipants,
+      [`conversations/${conversation.id}/updatedAt`]: Date.now(),
+      [`userConversations/${uid}/${conversation.id}`]: true
+    };
+    await update(ref(db), updates);
     await handleSystemMessage(`${userProfile?.displayName} added ${name}`);
     setShowAddMember(false);
   };
@@ -205,29 +250,33 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
     if (!userProfile) return;
     if (!confirm(`Leave '${conversation.groupName}'?`)) return;
 
-    let updates: any = {
-      participants: arrayRemove(userProfile.uid),
-      updatedAt: Date.now()
+    const newParticipants = { ...conversation.participants };
+    delete newParticipants[userProfile.uid];
+    const participantKeys = Object.keys(newParticipants);
+
+    const updates: any = {
+      [`conversations/${conversation.id}/participants`]: newParticipants,
+      [`conversations/${conversation.id}/updatedAt`]: Date.now(),
+      [`userConversations/${userProfile.uid}/${conversation.id}`]: null
     };
 
-    const isUserAdmin = conversation.admins?.includes(userProfile.uid);
+    const isUserAdmin = safeAdmins.includes(userProfile.uid);
     let newAdmins = [...(conversation.admins || [])];
     
     if (isUserAdmin) {
       newAdmins = newAdmins.filter(id => id !== userProfile.uid);
-      updates.admins = arrayRemove(userProfile.uid);
+      updates[`conversations/${conversation.id}/admins`] = newAdmins;
       
       // Auto-promote if sole admin
       if (newAdmins.length === 0) {
-        const remainingParticipants = conversation.participants.filter(id => id !== userProfile.uid);
-        if (remainingParticipants.length > 0) {
-          const oldestMember = remainingParticipants[0];
-          updates.admins = [oldestMember];
+        if (participantKeys.length > 0) {
+          const oldestMember = participantKeys[0];
+          updates[`conversations/${conversation.id}/admins`] = [oldestMember];
         }
       }
     }
 
-    await updateDoc(doc(db, 'conversations', conversation.id), updates);
+    await update(ref(db), updates);
     await handleSystemMessage(`${userProfile.displayName} left`);
     onLeave();
   };
@@ -275,6 +324,12 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
         </button>
       </div>
 
+      {groupError && (
+        <div className="bg-destructive/10 text-destructive text-sm p-3 text-center border-y border-destructive/20">
+          {groupError}
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="flex flex-col items-center p-6 bg-surface border-b border-border">
         <div className="relative group mb-4">
@@ -319,7 +374,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
         )}
 
         <p className="text-sm text-muted-foreground mt-2 text-center">
-          Group • {conversation.participants.length} members
+          Group • {Object.keys(conversation.participants).length} members
         </p>
       </div>
 
@@ -375,7 +430,7 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
         <div className="p-4 border-b border-border flex justify-between items-center">
           <h3 className="text-sm font-semibold text-muted-foreground">Members</h3>
           <span className="text-xs font-medium text-muted-foreground bg-background px-2 py-1 rounded-full">
-            {conversation.participants.length}
+            {Object.keys(conversation.participants).length}
           </span>
         </div>
 
@@ -392,10 +447,10 @@ export default function GroupInfoPanel({ conversation, usersMap, onClose, onLeav
         )}
 
         <div className="flex flex-col">
-          {conversation.participants.map(uid => {
+          {Object.keys(conversation.participants).map(uid => {
             const participant = usersMap[uid];
             if (!participant) return null;
-            const isParticipantAdmin = conversation.admins?.includes(uid);
+            const isParticipantAdmin = safeAdmins.includes(uid);
             const isMe = userProfile?.uid === uid;
 
             return (

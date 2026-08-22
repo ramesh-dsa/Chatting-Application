@@ -1,0 +1,43 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "userConversations": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "unreadCounts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "conversations": {
+      "$conversationId": {
+        ".read": "auth != null && data.child('participants').child(auth.uid).exists()",
+        ".write": "auth != null && (!data.exists() || data.child('participants').child(auth.uid).exists())",
+        
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['senderId','text','timestamp']) && newData.child('senderId').val() == auth.uid && (!data.exists() || data.child('senderId').val() == auth.uid)"
+          }
+        },
+        "typing": {
+          // No special rules needed since parent handles .read and .write, 
+          // but we can add validation to ensure users only write their own typing status
+          "$uid": {
+            ".validate": "auth != null && auth.uid == $uid"
+          }
+        }
+      }
+    }
+  }
+}

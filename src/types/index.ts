@@ -11,7 +11,7 @@ export interface UserProfile {
 export interface Conversation {
   id: string; // Document ID
   type: 'direct' | 'group';
-  participants: string[]; // Array of UIDs
+  participants: Record<string, boolean>; // uid -> true
   groupName?: string;
   groupPhoto?: string;
   description?: string;
@@ -48,8 +48,8 @@ export interface Message {
   attachmentSize?: number;
   duration?: number; // Duration of voice note in seconds
   timestamp: number;
-  readBy: string[]; // Array of UIDs
-  deliveredTo?: string[]; // Array of UIDs
+  readBy: (string | { uid: string, timestamp: number })[]; // Array of UIDs or objects
+  deliveredTo?: (string | { uid: string, timestamp: number })[]; // Array of UIDs or objects
   type: 'text' | 'image' | 'video' | 'document' | 'system' | 'voice' | 'poll' | 'call';
   callType?: 'voice' | 'video';
   callStatus?: 'ended' | 'declined' | 'missed' | 'busy';

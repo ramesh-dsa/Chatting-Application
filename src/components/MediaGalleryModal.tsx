@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { ref, get, query as dbQuery, limitToLast } from 'firebase/database';
 import { X, Loader2, Image as ImageIcon } from 'lucide-react';
 import { db } from '../lib/firebase';
 import type { Message } from '../types';
@@ -17,20 +17,23 @@ export default function MediaGalleryModal({ conversationId, currentUserId, onClo
 
   useEffect(() => {
     let cancelled = false;
-    const q = query(
-      collection(db, `conversations/${conversationId}/messages`),
-      where('attachmentType', 'in', ['image', 'video']),
-      limit(200)
+    const messagesRef = dbQuery(
+      ref(db, `conversations/${conversationId}/messages`),
+      limitToLast(500)
     );
-    getDocs(q).then((snapshot) => {
+    get(messagesRef).then((snapshot) => {
       if (cancelled) return;
       const items: Message[] = [];
-      snapshot.forEach((d) => {
-        const m = { id: d.id, ...d.data() } as Message;
-        if (m.deletedForEveryone) return;
-        if (m.deletedFor?.includes(currentUserId)) return;
-        items.push(m);
-      });
+      if (snapshot.exists()) {
+        snapshot.forEach((childSnapshot) => {
+          const m = { id: childSnapshot.key, ...childSnapshot.val() } as Message;
+          if (m.deletedForEveryone) return;
+          if (m.deletedFor?.includes(currentUserId)) return;
+          if (m.attachmentType === 'image' || m.attachmentType === 'video') {
+            items.push(m);
+          }
+        });
+      }
       items.sort((a, b) => b.timestamp - a.timestamp);
       setMedia(items);
       setLoading(false);

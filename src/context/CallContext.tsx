@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { db } from '../lib/firebase';
 import { 
-  collection, doc, setDoc, updateDoc, onSnapshot, query, where, addDoc 
-} from 'firebase/firestore';
+  ref, set, update, onValue, push, query as dbQuery, orderByChild, equalTo 
+} from 'firebase/database';
 import { useAuth } from './AuthContext';
 import CallOverlay from '../components/CallOverlay';
 
@@ -106,29 +106,30 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!currentUser) return;
     
-    const callsQuery = query(
-      collection(db, 'calls'),
-      where('calleeId', '==', currentUser.uid),
-      where('status', '==', 'ringing')
+    const callsQuery = dbQuery(
+      ref(db, 'calls'),
+      orderByChild('calleeId'),
+      equalTo(currentUser.uid)
     );
 
-    const unsubscribe = onSnapshot(callsQuery, (snapshot) => {
-      snapshot.docChanges().forEach(change => {
-        if (change.type === 'added') {
-          const callData = { id: change.doc.id, ...change.doc.data() } as CallData;
-          
-          // Simultaneous call edge case: if we are already in a call (or ringing)
-          if (activeCallRef.current) {
-            // We're busy! Auto-decline.
-            updateDoc(doc(db, 'calls', callData.id), { status: 'busy', endedAt: Date.now() });
-            return;
+    const unsubscribe = onValue(callsQuery, (snapshot) => {
+      if (snapshot.exists()) {
+        snapshot.forEach(childSnapshot => {
+          const callData = { id: childSnapshot.key, ...childSnapshot.val() } as CallData;
+          if (callData.status === 'ringing') {
+            // Simultaneous call edge case: if we are already in a call (or ringing)
+            if (activeCallRef.current && activeCallRef.current.id !== callData.id) {
+              // We're busy! Auto-decline.
+              update(ref(db, `calls/${callData.id}`), { status: 'busy', endedAt: Date.now() });
+              return;
+            }
+            
+            // Accept incoming call state
+            callDocRef.current = callData.id;
+            setActiveCall(callData);
           }
-          
-          // Accept incoming call state
-          callDocRef.current = callData.id;
-          setActiveCall(callData);
-        }
-      });
+        });
+      }
     });
 
     return () => unsubscribe();
@@ -138,13 +139,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!callDocRef.current) return;
     
-    const unsubscribe = onSnapshot(doc(db, 'calls', callDocRef.current), async (snapshot) => {
+    const unsubscribe = onValue(ref(db, `calls/${callDocRef.current}`), async (snapshot) => {
       if (!snapshot.exists()) {
         cleanupCall();
         return;
       }
       
-      const data = { id: snapshot.id, ...snapshot.data() } as CallData;
+      const data = { id: snapshot.key, ...snapshot.val() } as CallData;
       setActiveCall(data);
       
       const isCaller = data.callerId === currentUser?.uid;
@@ -186,20 +187,23 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const isCaller = activeCall.callerId === currentUser?.uid;
     const candidatesCollection = isCaller ? 'calleeCandidates' : 'callerCandidates';
     
-    const unsubscribe = onSnapshot(
-      collection(db, `calls/${callDocRef.current}/${candidatesCollection}`),
+    const unsubscribe = onValue(
+      ref(db, `calls/${callDocRef.current}/${candidatesCollection}`),
       (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          if (change.type === 'added') {
-            const candidate = change.doc.data() as RTCIceCandidateInit;
+        if (snapshot.exists()) {
+          snapshot.forEach((childSnapshot) => {
+            const candidate = childSnapshot.val() as RTCIceCandidateInit;
             if (pcRef.current?.remoteDescription) {
               pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.error);
             } else {
               // Queue candidate until remote desc is set
-              candidateQueue.current.push(candidate);
+              // Ensure we don't queue duplicates if snapshot fires multiple times
+              if (!candidateQueue.current.find(c => c.candidate === candidate.candidate)) {
+                candidateQueue.current.push(candidate);
+              }
             }
-          }
-        });
+          });
+        }
       }
     );
     return () => unsubscribe();
@@ -208,17 +212,17 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const writeCallLog = async (call: CallData, finalStatus: CallStatus, durationSecs: number = 0) => {
     if (!call.conversationId || !currentUser) return;
     try {
-      await addDoc(collection(db, `conversations/${call.conversationId}/messages`), {
+      await push(ref(db, `conversations/${call.conversationId}/messages`), {
         type: 'call',
         senderId: call.callerId, // Always the caller is the sender of the "call log" message
         callType: call.type,
         callStatus: finalStatus,
         duration: durationSecs,
         timestamp: Date.now(),
-        readBy: [currentUser.uid]
+        readBy: { [currentUser.uid]: Date.now() }
       });
       // Update last message
-      await updateDoc(doc(db, 'conversations', call.conversationId), {
+      await update(ref(db, `conversations/${call.conversationId}`), {
         lastMessage: `📞 ${call.type === 'video' ? 'Video' : 'Voice'} call`,
         lastMessageTimestamp: Date.now()
       });
@@ -235,7 +239,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        addDoc(collection(db, `calls/${callId}/${candidatesCollection}`), event.candidate.toJSON());
+        push(ref(db, `calls/${callId}/${candidatesCollection}`), event.candidate.toJSON());
       }
     };
 
@@ -280,15 +284,15 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsMuted(false);
       setIsVideoOff(false);
 
-      const callDoc = doc(collection(db, 'calls'));
-      callDocRef.current = callDoc.id;
+      const callDocRefDb = push(ref(db, 'calls'));
+      callDocRef.current = callDocRefDb.key;
 
-      const pc = setupPeerConnection(callDoc.id, true);
+      const pc = setupPeerConnection(callDocRefDb.key as string, true);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
       const callData: CallData = {
-        id: callDoc.id,
+        id: callDocRefDb.key as string,
         callerId: currentUser.uid,
         calleeId,
         callerName: userProfile.displayName,
@@ -302,13 +306,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         conversationId
       };
 
-      await setDoc(callDoc, callData);
+      await set(callDocRefDb, callData);
       setActiveCall(callData);
 
       // Missed call timeout
       missedCallTimer.current = setTimeout(() => {
         if (activeCallRef.current?.status === 'ringing') {
-          updateDoc(doc(db, 'calls', callDoc.id), { status: 'missed', endedAt: Date.now() });
+          update(ref(db, `calls/${callDocRefDb.key}`), { status: 'missed', endedAt: Date.now() });
           writeCallLog(activeCallRef.current, 'missed');
           cleanupCall();
         }
@@ -349,7 +353,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      await updateDoc(doc(db, 'calls', call.id), {
+      await update(ref(db, `calls/${call.id}`), {
         answer: { type: answer.type, sdp: answer.sdp },
         status: 'ongoing'
       });
@@ -371,7 +375,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const declineCall = () => {
     const call = activeCallRef.current;
     if (call && callDocRef.current) {
-      updateDoc(doc(db, 'calls', call.id), { status: 'declined', endedAt: Date.now() });
+      update(ref(db, `calls/${call.id}`), { status: 'declined', endedAt: Date.now() });
       if (call.callerId === currentUser?.uid) {
         // Caller cancelled
         writeCallLog(call, 'ended');
@@ -387,11 +391,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const call = activeCallRef.current;
     if (call && callDocRef.current && call.status === 'ongoing') {
       const duration = Math.floor((Date.now() - call.createdAt) / 1000);
-      updateDoc(doc(db, 'calls', call.id), { status: 'ended', endedAt: Date.now() });
+      update(ref(db, `calls/${call.id}`), { status: 'ended', endedAt: Date.now() });
       writeCallLog(call, 'ended', duration);
     } else if (call && call.status === 'ringing') {
       // Caller hung up before answer
-      updateDoc(doc(db, 'calls', call.id), { status: 'ended', endedAt: Date.now() });
+      update(ref(db, `calls/${call.id}`), { status: 'ended', endedAt: Date.now() });
       writeCallLog(call, 'ended');
     }
     cleanupCall();

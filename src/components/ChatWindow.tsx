@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, increment, writeBatch, limit, arrayUnion, arrayRemove, deleteField } from 'firebase/firestore';
+import { ref, onValue,update, push, query, orderByChild, limitToLast, serverTimestamp, increment } from 'firebase/database';
 import { MoreVertical, Phone, Video, ArrowLeft, Search, ChevronUp, ChevronDown, X, Forward, CheckSquare, Image as ImageIcon, Trash2, Star, Download, MessageSquare } from 'lucide-react';
+import MessageInfoModal from "./MessageInfoModal";
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
@@ -77,7 +78,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; senderName: string; timestamp: number; name: string } | null>(null);
   const [messageLimit, setMessageLimit] = useState(50);
-  const [isFetchingOlder, setIsFetchingOlder] = useState(false);
+  const isFetchingOlderRef = useRef(false);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
 
   // Search states
@@ -95,23 +96,20 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   const handleBulkDelete = useCallback(async (mode: 'me' | 'everyone') => {
     if (!currentUser) return;
-    const batch = writeBatch(db);
+    const updates: Record<string, any> = {};
     selectedMessageIds.forEach(id => {
-      const msgRef = doc(db, `conversations/${conversationId}/messages`, id);
       if (mode === 'everyone') {
-        batch.update(msgRef, {
-          deletedForEveryone: true,
-          text: '',
-          attachmentUrl: '',
-          attachmentType: '',
-          attachmentName: ''
-        });
+        updates[`conversations/${conversationId}/messages/${id}/deletedForEveryone`] = true;
+        updates[`conversations/${conversationId}/messages/${id}/text`] = '';
+        updates[`conversations/${conversationId}/messages/${id}/attachmentUrl`] = '';
+        updates[`conversations/${conversationId}/messages/${id}/attachmentType`] = '';
+        updates[`conversations/${conversationId}/messages/${id}/attachmentName`] = '';
       } else {
-        batch.update(msgRef, { deletedFor: arrayUnion(currentUser.uid) });
+        updates[`conversations/${conversationId}/messages/${id}/deletedFor/${currentUser.uid}`] = true;
       }
     });
     try {
-      await batch.commit();
+      await update(ref(db), updates);
       setForwardSelectionMode(false);
       setSelectedMessageIds(new Set());
       setShowDeleteConfirm(false);
@@ -124,26 +122,25 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   const handleBulkStar = useCallback(async () => {
     if (!currentUser) return;
-    const batch = writeBatch(db);
+    const updates: Record<string, any> = {};
     let starredCount = 0;
     let unstarredCount = 0;
     
     // First, determine the action. If ALL are starred, unstar all. Otherwise, star all.
     const selectedMsgs = messages.filter(m => selectedMessageIds.has(m.id));
-    const allStarred = selectedMsgs.every(m => m.starredBy?.includes(currentUser.uid));
+    const allStarred = selectedMsgs.every(m => m.starredBy && Object.keys(m.starredBy).includes(currentUser.uid));
     
     selectedMessageIds.forEach(id => {
-      const msgRef = doc(db, `conversations/${conversationId}/messages`, id);
       if (allStarred) {
-        batch.update(msgRef, { starredBy: arrayRemove(currentUser.uid) });
+        updates[`conversations/${conversationId}/messages/${id}/starredBy/${currentUser.uid}`] = null;
         unstarredCount++;
       } else {
-        batch.update(msgRef, { starredBy: arrayUnion(currentUser.uid) });
+        updates[`conversations/${conversationId}/messages/${id}/starredBy/${currentUser.uid}`] = true;
         starredCount++;
       }
     });
     try {
-      await batch.commit();
+      await update(ref(db), updates);
       setForwardSelectionMode(false);
       setSelectedMessageIds(new Set());
       setToastMessage(allStarred ? `Unstarred ${unstarredCount} messages` : `Starred ${starredCount} messages`);
@@ -239,12 +236,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   }, []);
 
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [infoMessageId, setInfoMessageId] = useState<string | null>(null);
   const [, setTypingTick] = useState(0);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
 
   const handleReact = useCallback(async (messageId: string, emoji: string) => {
     if (!currentUser) return;
-    const msgRef = doc(db, `conversations/${conversationId}/messages`, messageId);
     const msg = messages.find(m => m.id === messageId);
     if (!msg) return;
 
@@ -256,18 +253,18 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       if (msg.reactions) {
         Object.keys(msg.reactions).forEach(e => {
           if (msg.reactions![e].includes(currentUser.uid)) {
-            updates[`reactions.${e}`] = arrayRemove(currentUser.uid);
+            updates[`conversations/${conversationId}/messages/${messageId}/reactions/${e}/${currentUser.uid}`] = null;
           }
         });
       }
 
       // If they clicked a new emoji (or one they hadn't selected), add it
       if (!alreadyReactedToThis) {
-        updates[`reactions.${emoji}`] = arrayUnion(currentUser.uid);
+        updates[`conversations/${conversationId}/messages/${messageId}/reactions/${emoji}/${currentUser.uid}`] = true;
       }
 
       if (Object.keys(updates).length > 0) {
-        await updateDoc(msgRef, updates);
+        await update(ref(db), updates);
       }
     } catch (err) {
       console.error("Failed to update reaction:", err);
@@ -282,9 +279,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     if (!currentUser) return;
     const trimmed = newText.trim();
     if (!trimmed) return;
-    const msgRef = doc(db, `conversations/${conversationId}/messages`, messageId);
     try {
-      await updateDoc(msgRef, { text: trimmed, edited: true, editedAt: Date.now() });
+      await update(ref(db, `conversations/${conversationId}/messages/${messageId}`), { text: trimmed, edited: true, editedAt: Date.now() });
     } catch (err) {
       console.error("Failed to edit message:", err);
     }
@@ -292,10 +288,9 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   const handleDeleteMessage = useCallback(async (messageId: string, mode: 'me' | 'everyone') => {
     if (!currentUser) return;
-    const msgRef = doc(db, `conversations/${conversationId}/messages`, messageId);
     try {
       if (mode === 'everyone') {
-        await updateDoc(msgRef, {
+        await update(ref(db, `conversations/${conversationId}/messages/${messageId}`), {
           deletedForEveryone: true,
           text: '',
           attachmentUrl: '',
@@ -303,7 +298,9 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           attachmentName: ''
         });
       } else {
-        await updateDoc(msgRef, { deletedFor: arrayUnion(currentUser.uid) });
+        await update(ref(db, `conversations/${conversationId}/messages/${messageId}/deletedFor`), {
+          [currentUser.uid]: true
+        });
       }
     } catch (err) {
       console.error("Failed to delete message:", err);
@@ -312,15 +309,15 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   const handleTyping = useCallback(() => {
     if (!currentUser || !conversationId) return;
-    updateDoc(doc(db, 'conversations', conversationId), {
-      [`typing.${currentUser.uid}`]: Date.now()
+    update(ref(db, `conversations/${conversationId}/typing`), {
+      [currentUser.uid]: Date.now()
     }).catch(console.error);
   }, [currentUser, conversationId]);
 
   const handleStopTyping = useCallback(() => {
     if (!currentUser || !conversationId) return;
-    updateDoc(doc(db, 'conversations', conversationId), {
-      [`typing.${currentUser.uid}`]: deleteField()
+    update(ref(db, `conversations/${conversationId}/typing`), {
+      [currentUser.uid]: null
     }).catch(console.error);
   }, [currentUser, conversationId]);
 
@@ -430,10 +427,10 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   useEffect(() => {
     if (!conversationId) return;
 
-    const unsubConvo = onSnapshot(doc(db, 'conversations', conversationId), async (snapshot) => {
+    const unsubConvo = onValue(ref(db, `conversations/${conversationId}`), (snapshot) => {
       if (snapshot.exists()) {
-        const convoData = snapshot.data() as Omit<Conversation, 'id'>;
-        setConversation({ ...convoData, id: snapshot.id } as Conversation);
+        const convoData = snapshot.val() as Omit<Conversation, 'id'>;
+        setConversation({ ...convoData, id: snapshot.key } as Conversation);
       }
     }, (error) => {
       console.error("Conversation listener error:", error);
@@ -459,15 +456,60 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     if (!conversationId) return;
 
     const q = query(
-      collection(db, `conversations/${conversationId}/messages`),
-      orderBy('timestamp', 'desc'),
-      limit(messageLimit)
+      ref(db, `conversations/${conversationId}/messages`),
+      orderByChild('timestamp'),
+      limitToLast(messageLimit)
     );
 
-    const unsubMessages = onSnapshot(q, (snapshot) => {
+    const unsubMessages = onValue(q, (snapshot) => {
       const msgs: Message[] = [];
-      snapshot.forEach((d) => {
-        msgs.push({ id: d.id, ...d.data() } as Message);
+      snapshot.forEach((childSnapshot) => {
+        const d = childSnapshot.val();
+        
+        // Robust mapper for mixed RTDB arrays/objects
+        const mapToUids = (data: any): string[] => {
+          if (!data) return [];
+          if (Array.isArray(data)) {
+            return data.map(item => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object' && item.uid) return item.uid;
+              return '';
+            }).filter(Boolean);
+          }
+          if (typeof data === 'object') {
+            return Object.keys(data).reduce((acc: string[], key) => {
+              const val = data[key];
+              if (val === true) acc.push(key);
+              else if (typeof val === 'string') acc.push(val);
+              else if (val && typeof val === 'object' && val.uid) acc.push(val.uid);
+              return acc;
+            }, []);
+          }
+          return [];
+        };
+
+        const mappedReadBy = mapToUids(d.readBy);
+        const mappedDeliveredTo = mapToUids(d.deliveredTo);
+        const mappedStarredBy = mapToUids(d.starredBy);
+        const mappedDeletedFor = mapToUids(d.deletedFor);
+        
+        let mappedReactions = d.reactions;
+        if (d.reactions) {
+          mappedReactions = {};
+          Object.keys(d.reactions).forEach(emoji => {
+            mappedReactions[emoji] = Object.keys(d.reactions[emoji]);
+          });
+        }
+        
+        msgs.push({ 
+          ...d, 
+          id: childSnapshot.key,
+          readBy: mappedReadBy,
+          deliveredTo: mappedDeliveredTo,
+          starredBy: mappedStarredBy,
+          deletedFor: mappedDeletedFor,
+          reactions: mappedReactions
+        } as Message);
       });
       
       const reversedMsgs = msgs.reverse();
@@ -475,15 +517,13 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       setMessagesLoaded(true);
       
       // Auto-scroll only if we are not fetching older messages AND we were already at the bottom
-      // or if it's the initial load. Since calculating "was at bottom" requires ref before render,
-      // a simple heuristic for Telegram-style is to scroll down if the last message was sent by the current user,
-      // or if it's the initial load (isFetchingOlder is false and limit hasn't changed).
-      if (!isFetchingOlder) {
+      // or if it's the initial load.
+      if (!isFetchingOlderRef.current) {
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
         }, 100);
       } else {
-        setIsFetchingOlder(false);
+        isFetchingOlderRef.current = false;
       }
 
       // Handle Read Receipts (Mark all unread messages from others as read & delivered)
@@ -491,35 +531,25 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         const unreadMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.readBy.includes(currentUser.uid));
         
         if (unreadMsgs.length > 0) {
-          const batch = writeBatch(db);
+          const updates: Record<string, any> = {};
           unreadMsgs.forEach(m => {
-            const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
-            
-            batch.update(msgRef, {
-              readBy: arrayUnion(currentUser.uid),
-              deliveredTo: arrayUnion(currentUser.uid)
-            });
+            updates[`conversations/${conversationId}/messages/${m.id}/readBy/${currentUser.uid}`] = true;
+            updates[`conversations/${conversationId}/messages/${m.id}/deliveredTo/${currentUser.uid}`] = true;
           });
           
           // Also reset unread count for current user
-          const convoRef = doc(db, 'conversations', conversationId);
-          batch.update(convoRef, {
-            [`unreadCounts.${currentUser.uid}`]: 0
-          });
+          updates[`conversations/${conversationId}/unreadCounts/${currentUser.uid}`] = 0;
           
-          batch.commit().catch(console.error);
+          update(ref(db), updates).catch(console.error);
         } else {
           // Check if any messages are just undelivered and mark them delivered
           const undeliveredMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.deliveredTo?.includes(currentUser.uid));
           if (undeliveredMsgs.length > 0) {
-            const batch = writeBatch(db);
+            const updates: Record<string, any> = {};
             undeliveredMsgs.forEach(m => {
-              const msgRef = doc(db, `conversations/${conversationId}/messages`, m.id);
-              batch.update(msgRef, {
-                deliveredTo: arrayUnion(currentUser.uid)
-              });
+              updates[`conversations/${conversationId}/messages/${m.id}/deliveredTo/${currentUser.uid}`] = true;
             });
-            batch.commit().catch(console.error);
+            update(ref(db), updates).catch(console.error);
           }
         }
       }
@@ -549,7 +579,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (e.currentTarget.scrollTop === 0 && messages.length >= messageLimit) {
-      setIsFetchingOlder(true);
+      isFetchingOlderRef.current = true;
       setMessageLimit(prev => prev + 50);
     }
   };
@@ -641,7 +671,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         senderId: currentUser.uid,
         text: text.trim(),
         timestamp: Date.now(),
-        readBy: [currentUser.uid],
+        readBy: { [currentUser.uid]: true },
+        deliveredTo: { [currentUser.uid]: true },
         type: attachmentType ? attachmentType : 'text'
       };
 
@@ -665,25 +696,28 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           : (replyToMessage.senderId ? usersMap[replyToMessage.senderId]?.displayName : undefined);
       }
 
-      await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
+      const newMsgRef = push(ref(db, `conversations/${conversationId}/messages`));
+      const msgId = newMsgRef.key;
+      
+      const updates: Record<string, any> = {};
+      updates[`conversations/${conversationId}/messages/${msgId}`] = msgData;
 
       // Prepare unread counts increment for other participants
-      const unreadUpdates: Record<string, any> = {};
       if (conversation?.participants) {
-        conversation.participants.forEach(uid => {
+        const participantKeys = conversation?.participants ? Object.keys(conversation.participants) : [];
+        participantKeys.forEach(uid => {
           if (uid !== currentUser.uid) {
-            unreadUpdates[`unreadCounts.${uid}`] = increment(1);
+            updates[`conversations/${conversationId}/unreadCounts/${uid}`] = increment(1);
           }
         });
       }
 
-      // Update the conversation's last message and unread counts
-      await updateDoc(doc(db, 'conversations', conversationId), {
-        lastMessage: attachmentType ? `[${attachmentType === 'image' ? 'Photo' : attachmentType === 'video' ? 'Video' : attachmentType === 'voice' ? 'Voice Message' : 'Document'}] ${text.trim()}` : text.trim(),
-        lastMessageTimestamp: Date.now(),
-        updatedAt: Date.now(),
-        ...unreadUpdates
-      });
+      // Update the conversation's last message
+      updates[`conversations/${conversationId}/lastMessage`] = attachmentType ? `[${attachmentType === 'image' ? 'Photo' : attachmentType === 'video' ? 'Video' : attachmentType === 'voice' ? 'Voice Message' : 'Document'}] ${text.trim()}` : text.trim();
+      updates[`conversations/${conversationId}/lastMessageTimestamp`] = serverTimestamp();
+      updates[`conversations/${conversationId}/updatedAt`] = serverTimestamp();
+
+      await update(ref(db), updates);
 
       setReplyingTo(null);
     } catch (error: any) {
@@ -702,7 +736,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         senderId: currentUser.uid,
         text: '',
         timestamp: Date.now(),
-        readBy: [currentUser.uid],
+        readBy: { [currentUser.uid]: true },
+        deliveredTo: { [currentUser.uid]: true },
         type: 'poll',
         pollData: {
           ...pollData,
@@ -710,25 +745,28 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         }
       };
 
-      await addDoc(collection(db, `conversations/${conversationId}/messages`), msgData);
+      const newMsgRef = push(ref(db, `conversations/${conversationId}/messages`));
+      const msgId = newMsgRef.key;
+      
+      const updates: Record<string, any> = {};
+      updates[`conversations/${conversationId}/messages/${msgId}`] = msgData;
 
       // Prepare unread counts increment for other participants
-      const unreadUpdates: Record<string, any> = {};
       if (conversation?.participants) {
-        conversation.participants.forEach(uid => {
+        const participantKeys = conversation?.participants ? Object.keys(conversation.participants) : [];
+        participantKeys.forEach(uid => {
           if (uid !== currentUser.uid) {
-            unreadUpdates[`unreadCounts.${uid}`] = increment(1);
+            updates[`conversations/${conversationId}/unreadCounts/${uid}`] = increment(1);
           }
         });
       }
 
-      // Update the conversation's last message and unread counts
-      await updateDoc(doc(db, 'conversations', conversationId), {
-        lastMessage: '📊 Poll',
-        lastMessageTimestamp: Date.now(),
-        updatedAt: Date.now(),
-        ...unreadUpdates
-      });
+      // Update the conversation's last message
+      updates[`conversations/${conversationId}/lastMessage`] = '📊 Poll';
+      updates[`conversations/${conversationId}/lastMessageTimestamp`] = serverTimestamp();
+      updates[`conversations/${conversationId}/updatedAt`] = serverTimestamp();
+
+      await update(ref(db), updates);
     } catch (error: any) {
       setToastMessage(error.message || "Failed to send poll");
       console.error("Error sending poll:", error);
@@ -750,7 +788,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   let chatAvatar = conversation.groupPhoto || '';
 
   if (conversation.type === 'direct') {
-    const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
+    const participantKeys = conversation?.participants ? Object.keys(conversation.participants) : [];
+                    const otherUid = participantKeys.find(uid => uid !== currentUser?.uid);
     const otherUser = otherUid ? usersMap[otherUid] : null;
     chatTitle = otherUser?.displayName || 'User';
     chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.statusMessage || 'Hey there! I am using Chat.');
@@ -917,7 +956,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               <button 
                 onClick={() => {
                   if (conversation.type === 'direct') {
-                    const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
+                    const participantKeys = conversation?.participants ? Object.keys(conversation.participants) : [];
+                    const otherUid = participantKeys.find(uid => uid !== currentUser?.uid);
                     if (otherUid) {
                       initiateCall(otherUid, chatTitle, chatAvatar, 'voice', conversationId);
                     }
@@ -932,7 +972,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               <button 
                 onClick={() => {
                   if (conversation.type === 'direct') {
-                    const otherUid = conversation.participants.find(uid => uid !== currentUser?.uid);
+                    const participantKeys = conversation?.participants ? Object.keys(conversation.participants) : [];
+                    const otherUid = participantKeys.find(uid => uid !== currentUser?.uid);
                     if (otherUid) {
                       initiateCall(otherUid, chatTitle, chatAvatar, 'video', conversationId);
                     }
@@ -1039,7 +1080,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                   isLastInGroup={false}
                   isHighlighted={highlightedMessageId === msg.id}
                   isGroupChat={conversation.type === 'group'}
-                  participantCount={conversation.participants.length}
+                  participantCount={conversation?.participants ? Object.keys(conversation.participants).length : 0}
                   conversationId={conversationId}
                   currentUserId={currentUser?.uid || ''}
                   usersMap={usersMap}
@@ -1080,7 +1121,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 isLastInGroup={isLastInGroup}
                 isGroupChat={conversation.type === 'group'}
                 isHighlighted={highlightedMessageId === msg.id}
-                participantCount={conversation.participants.length}
+                participantCount={conversation?.participants ? Object.keys(conversation.participants).length : 0}
                 usersMap={usersMap}
                 onImageClick={handleImageClick}
                 selectionMode={forwardSelectionMode}
@@ -1090,6 +1131,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                 onCopy={handleCopyClick}
                 onSelectMode={handleSelectModeClick}
                 onReact={handleReact}
+                onInfo={setInfoMessageId}
                 onReply={handleReply}
                 onEdit={handleEditMessage}
                 onDelete={handleDeleteMessage}
@@ -1115,6 +1157,17 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     </div>
 
     {/* Modals & Panels */}
+      {infoMessageId && (
+        <MessageInfoModal
+          messageId={infoMessageId}
+          conversationId={conversationId}
+          usersMap={usersMap}
+          participants={conversation?.participants ? Object.keys(conversation.participants) : []}
+          currentUserId={currentUser?.uid || ''}
+          onClose={() => setInfoMessageId(null)}
+        />
+      )}
+
       {showForwardModal && (
         <ForwardModal 
           selectedMessages={messages.filter(m => selectedMessageIds.has(m.id))}

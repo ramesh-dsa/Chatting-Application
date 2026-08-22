@@ -1,11 +1,26 @@
-import React, { memo } from 'react';
+import React, { useEffect, useRef, memo } from 'react';
 import { format } from 'date-fns';
-import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare, SmilePlus, Reply, Pencil, Trash2, Phone, Video, PhoneMissed } from 'lucide-react';
+import { Check as CheckIcon, CheckCheck, FileText, Download, ChevronDown, Forward, Copy, CheckSquare, SmilePlus, Reply, Pencil, Trash2, Phone, Video, PhoneMissed, Info } from 'lucide-react';
 import type { Message, UserProfile } from '../types';
 import PollDisplay from './PollDisplay';
 import { Avatar } from './ui/Avatar';
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+// Safe helpers to prevent crashes when Firebase returns objects instead of sparse arrays
+const safeIncludes = (data: any, val: string) => {
+  if (!data) return false;
+  if (Array.isArray(data)) return data.includes(val);
+  if (typeof data === 'object') return Object.values(data).includes(val) || val in data;
+  return false;
+};
+
+const safeLength = (data: any) => {
+  if (!data) return 0;
+  if (Array.isArray(data)) return data.filter(Boolean).length;
+  if (typeof data === 'object') return Object.keys(data).length;
+  return 0;
+};
 
 interface MessageBubbleProps {
   message: Message;
@@ -28,8 +43,11 @@ interface MessageBubbleProps {
   onReply?: (message: Message) => void;
   onEdit?: (messageId: string, newText: string) => void;
   onDelete?: (messageId: string, mode: 'me' | 'everyone') => void;
+  onInfo?: (messageId: string) => void;
+
   conversationId: string;
   currentUserId: string;
+
 }
 
 const MessageBubble = function MessageBubble({ 
@@ -49,14 +67,20 @@ const MessageBubble = function MessageBubble({
   onCopy,
   onSelectMode,
   onReact,
-  usersMap,
+  usersMap = {},
   onReply,
   onEdit,
   onDelete,
+  onInfo,
+
   conversationId,
-  currentUserId
+  currentUserId,
+
 }: MessageBubbleProps) {
   const [showMenu, setShowMenu] = React.useState(false);
+  
+  const [menuPosition, setMenuPosition] = React.useState<'top' | 'bottom'>('bottom');
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const [showReactPicker, setShowReactPicker] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const [editText, setEditText] = React.useState(message.text);
@@ -125,7 +149,7 @@ const MessageBubble = function MessageBubble({
     );
   }
 
-  if (message.deletedFor?.includes(currentUserId)) {
+  if (safeIncludes(message.deletedFor, currentUserId)) {
     return (
       <div className={`flex w-full mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
         <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${radiusClass} ${isOwnMessage ? 'bg-bg-msg-sent' : 'bg-surface'}`}>
@@ -141,9 +165,16 @@ const MessageBubble = function MessageBubble({
   let tickState = 'sent'; // 'sent' | 'delivered' | 'read'
   if (isOwnMessage) {
     const otherParticipantCount = participantCount - 1;
-    // msg.readBy includes the sender
-    const readCount = message.readBy ? message.readBy.length - 1 : 0;
-    const deliveredCount = message.deliveredTo ? message.deliveredTo.length : 0;
+    // msg.readBy includes the sender. Handle mixed type strings or objects and prevent duplicates from inflating counts.
+    const getUniqueUids = (data: any) => {
+      if (!data) return new Set();
+      if (Array.isArray(data)) return new Set(data.map(r => typeof r === 'string' ? r : r.uid));
+      if (typeof data === 'object') return new Set(Object.keys(data));
+      return new Set();
+    };
+    const uniqueReaders = getUniqueUids(message.readBy);
+    const readCount = Math.max(0, uniqueReaders.size - (uniqueReaders.has(message.senderId) ? 1 : 0));
+    const deliveredCount = getUniqueUids(message.deliveredTo).size;
 
     if (readCount >= otherParticipantCount && otherParticipantCount > 0) {
       tickState = 'read';
@@ -151,6 +182,18 @@ const MessageBubble = function MessageBubble({
       tickState = 'delivered';
     }
   }
+
+    useEffect(() => {
+    if (showMenu && bubbleRef.current) {
+      const rect = bubbleRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 250) {
+        setMenuPosition('top');
+      } else {
+        setMenuPosition('bottom');
+      }
+    }
+  }, [showMenu]);
 
   const handleBubbleClick = () => {
     if (selectionMode) {
@@ -219,7 +262,7 @@ const MessageBubble = function MessageBubble({
           <div 
             id={`msg-${message.id}`}
             onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
-            className={`px-[9px] pt-[6px] pb-[8px] relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 ${radiusClass} ${
+            className={`pl-[9px] pr-[9px] pt-[6px] pb-[8px] relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
@@ -276,9 +319,11 @@ const MessageBubble = function MessageBubble({
                 </div>
               </div>
             ) : message.text && (
-              <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] ${message.attachmentUrl ? 'mb-2' : ''}`}>
+              <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] relative ${message.attachmentUrl ? 'mb-2' : ''}`}>
                 {message.text}
-                <span className="inline-block w-[60px]" />
+                {!message.attachmentUrl && !message.pollData && (
+                  <span className="inline-block" style={{ width: message.edited ? '110px' : '75px' }} />
+                )}
               </p>
             )}
             
@@ -339,19 +384,23 @@ const MessageBubble = function MessageBubble({
               </div>
             )}
 
-            {/* Floating Timestamp inside the bubble */}
-            <div className="absolute bottom-1 right-2 flex items-center space-x-1">
+            {/* Timestamp & Ticks placed absolutely at the bottom right of the bubble inner container */}
+            <div className="absolute bottom-[4px] right-[8px] flex items-center justify-end gap-1 shrink-0 z-10">
               {message.edited && (
-                <span className="text-[11px] text-muted italic mt-1">edited</span>
+                <span className="text-[11px] text-muted italic">edited</span>
               )}
-              <span className="text-[11px] text-muted opacity-80 mt-1">
+              <span className="text-[11px] text-muted opacity-80 mt-[1px]">
                 {format(message.timestamp, 'h:mm a')}
               </span>
               {isOwnMessage && (
-                <span className="ml-1 flex items-center">
-                  {tickState === 'sent' && <CheckIcon className="w-3.5 h-3.5 text-blue-500" />}
-                  {tickState === 'delivered' && <CheckCheck className="w-3.5 h-3.5 text-muted-foreground/60" />}
-                  {tickState === 'read' && <CheckCheck className="w-3.5 h-3.5 text-blue-500" />}
+                <span className="flex items-center">
+                  {tickState === 'read' ? (
+                    <CheckCheck className="w-4 h-4 text-blue-500" />
+                  ) : tickState === 'delivered' ? (
+                    <CheckCheck className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <CheckIcon className="w-4 h-4 text-muted-foreground" />
+                  )}
                 </span>
               )}
             </div>
@@ -363,9 +412,11 @@ const MessageBubble = function MessageBubble({
                   e.stopPropagation();
                   setShowMenu(!showMenu);
                 }}
-                className={`absolute top-1 right-1 p-0.5 rounded-full bg-black/5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${showMenu ? 'opacity-100' : ''}`}
+                className={`absolute top-1 right-1 p-0.5 rounded-full z-10 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${
+                  showMenu ? 'opacity-100' : ''
+                } ${isOwnMessage ? 'bg-bg-msg-sent shadow-[0_0_6px_2px_rgba(227,242,253,0.8)] dark:shadow-[0_0_6px_2px_rgba(17,34,31,0.8)]' : 'bg-surface shadow-[0_0_6px_2px_rgba(255,255,255,0.8)] dark:shadow-[0_0_6px_2px_rgba(31,31,31,0.8)]'}`}
               >
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-4 h-4 bg-black/5 rounded-full" />
               </button>
             )}
 
@@ -404,7 +455,7 @@ const MessageBubble = function MessageBubble({
 
             {/* Dropdown Menu */}
             {showMenu && (
-              <div className="absolute top-6 right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-50 min-w-[120px]">
+              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-[100] min-w-[120px]`}>
                 {message.type !== 'poll' && (
                   <button
                     onMouseDown={(e) => e.preventDefault()}
@@ -417,6 +468,20 @@ const MessageBubble = function MessageBubble({
                   >
                     <CheckSquare className="w-4 h-4" />
                     Select
+                  </button>
+                )}
+                {isOwnMessage && onInfo && (
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMenu(false);
+                      onInfo(message.id);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2 text-foreground"
+                  >
+                    <Info className="w-4 h-4" />
+                    Info
                   </button>
                 )}
                 <button
@@ -509,10 +574,10 @@ const MessageBubble = function MessageBubble({
           </div>
 
           {/* Reaction Chips */}
-          {!selectionMode && (Object.entries(message.reactions || {}).some(([, uids]) => uids.length > 0)) && (
+          {!selectionMode && (Object.entries(message.reactions || {}).some(([, uids]) => safeLength(uids) > 0)) && (
             <div className={`flex flex-wrap items-center gap-1 mt-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
               {Object.entries(message.reactions || {})
-                .filter(([, uids]) => uids.length > 0)
+                .filter(([, uids]) => safeLength(uids) > 0)
                 .map(([emoji, uids]) => (
                   <button
                     key={emoji}
@@ -521,11 +586,11 @@ const MessageBubble = function MessageBubble({
                       onReact?.(message.id, emoji);
                     }}
                     className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border shadow-sm transition-colors ${
-                      uids.includes(currentUserId) ? 'bg-accent/20 border-accent/50' : 'bg-surface border-border'
+                      safeIncludes(uids, currentUserId) ? 'bg-accent/20 border-accent/50' : 'bg-surface border-border'
                     }`}
                   >
-                    <span>{emoji}</span>
-                    <span className="font-medium text-foreground/80">{uids.length}</span>
+                    <span className="text-sm">{emoji}</span>
+                    <span className="font-medium text-foreground/80">{safeLength(uids)}</span>
                   </button>
                 ))}
             </div>
@@ -538,8 +603,8 @@ const MessageBubble = function MessageBubble({
 
 export default memo(MessageBubble, (prev, next) => {
   return prev.message.id === next.message.id &&
-         prev.message.readBy.length === next.message.readBy.length &&
-         prev.message.deliveredTo?.length === next.message.deliveredTo?.length &&
+         Object.keys(prev.message.readBy || {}).length === Object.keys(next.message.readBy || {}).length &&
+         Object.keys(prev.message.deliveredTo || {}).length === Object.keys(next.message.deliveredTo || {}).length &&
          prev.isHighlighted === next.isHighlighted &&
          prev.selectionMode === next.selectionMode &&
          prev.isSelected === next.isSelected &&

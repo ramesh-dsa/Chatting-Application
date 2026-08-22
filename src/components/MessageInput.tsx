@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Send, Smile, Plus, Image as ImageIcon, FileText, X, Mic, Trash2, ArrowLeft, Lock, ChevronUp, BarChart2 } from 'lucide-react';
 import CreatePollModal from './CreatePollModal';
 import type { Message, PollData } from '../types';
+import { stripHTML } from '../utils/sanitize';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
@@ -110,10 +111,17 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
     // existing logic
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 20 * 1024 * 1024) {
-        alert("File size must be less than 20MB");
+      if (file.size > 15 * 1024 * 1024) {
+        alert("File size must be less than 15MB");
         return;
       }
+      
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+      if (!allowedTypes.includes(file.type)) {
+        alert("Unsupported file type.");
+        return;
+      }
+
       setSelectedFile(file);
       if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
         setPreviewUrl(URL.createObjectURL(file));
@@ -155,7 +163,15 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
     }
     recentSendsRef.current = [...recent, now];
 
-    const messageText = text.trim();
+    const messageText = stripHTML(text.trim());
+    
+    if (messageText.length > 4096) {
+      alert("Message is too long (max 4096 characters).");
+      return;
+    }
+
+    if (!messageText && !selectedFile) return;
+
     const currentFile = selectedFile;
 
     setIsSending(true);
@@ -427,9 +443,23 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-end gap-2 w-full">
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        const cleanText = stripHTML(text);
+        if (cleanText.length > 4096) {
+          alert("Message too long.");
+          return;
+        }
+        handleSubmit();
+      }} className="flex items-end gap-2 w-full">
         
-        <div className="flex-1 flex items-end bg-surface rounded-3xl px-2 py-1 border border-border/50 focus-within:ring-1 focus-within:ring-accent/50 transition-all">
+        <div className="flex-1 flex items-end bg-surface rounded-3xl px-2 py-1 border border-border/50 focus-within:ring-1 focus-within:ring-accent/50 transition-all relative">
+          {text.length > 3500 && (
+            <div className={`absolute -top-6 right-4 text-xs font-medium ${text.length > 4096 ? 'text-destructive' : 'text-accent'}`}>
+              {text.length}/4096
+            </div>
+          )}
+          
           {/* Left Side: Attachments and Emoji */}
           {!isRecording && (
             <div className="flex items-center gap-0.5 shrink-0 pb-0.5 pl-1 animate-in fade-in">

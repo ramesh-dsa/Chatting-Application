@@ -3,7 +3,7 @@ import Sidebar from '../components/Sidebar';
 import IconRail from '../components/IconRail';
 import ChatWindow from '../components/ChatWindow';
 import { MessageSquare } from 'lucide-react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { ref, onValue } from 'firebase/database';
 import { db } from '../lib/firebase';
 import type { UserProfile } from '../types';
 
@@ -15,11 +15,13 @@ export default function Dashboard() {
   const [showMyProfile, setShowMyProfile] = useState(false);
 
   useEffect(() => {
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+    const unsubscribeUsers = onValue(ref(db, 'users'), (snapshot) => {
       const map: Record<string, UserProfile> = {};
-      snapshot.forEach((doc) => {
-        map[doc.id] = doc.data() as UserProfile;
-      });
+      if (snapshot.exists()) {
+        snapshot.forEach((childSnapshot) => {
+          map[childSnapshot.key] = childSnapshot.val() as UserProfile;
+        });
+      }
       setUsersMap(map);
       setIsUsersLoaded(true);
     });
@@ -36,7 +38,7 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden pb-[60px] md:pb-0 relative">
+    <div className="flex h-[100dvh] bg-background overflow-hidden pb-[60px] md:pb-0 relative">
       <IconRail 
         onProfileClick={() => setShowMyProfile(true)} 
         onChatsClick={() => setShowMyProfile(false)}

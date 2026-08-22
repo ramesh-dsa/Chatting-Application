@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { collection, query, getDocs, addDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+import { ref, get, child, push, update } from 'firebase/database';
 import { X, Users } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import { stripHTML } from '../utils/sanitize';
 import type { UserProfile } from '../types';
 import { Avatar } from './ui/Avatar';
 
@@ -26,15 +27,16 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const q = query(collection(db, 'users'));
-        const snapshot = await getDocs(q);
-        const usersList: UserProfile[] = [];
-        snapshot.forEach((doc) => {
-          if (doc.id !== userProfile?.uid) {
-            usersList.push(doc.data() as UserProfile);
-          }
-        });
-        setUsers(usersList);
+        const snapshot = await get(child(ref(db), 'users'));
+        if (snapshot.exists()) {
+          const usersList: UserProfile[] = [];
+          snapshot.forEach((childSnapshot) => {
+            if (childSnapshot.key !== userProfile?.uid) {
+              usersList.push(childSnapshot.val() as UserProfile);
+            }
+          });
+          setUsers(usersList);
+        }
       } catch (err) {
         console.error("Error fetching users:", err);
       } finally {
@@ -79,8 +81,8 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
     setError('');
     try {
       const directConversationId = [userProfile.uid, otherUser.uid].sort().join('_');
-      const convoRef = doc(db, 'conversations', directConversationId);
-      const convoSnap = await getDoc(convoRef);
+      const convoRef = ref(db, `conversations/${directConversationId}`);
+      const convoSnap = await get(convoRef);
 
       if (convoSnap.exists()) {
         onSelectConversation(directConversationId);
@@ -94,12 +96,17 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
       }
 
       // Create new if it doesn't exist
-      await setDoc(convoRef, {
+      const updates: any = {};
+      updates[`conversations/${directConversationId}`] = {
         type: 'direct',
-        participants: [userProfile.uid, otherUser.uid],
+        participants: { [userProfile.uid]: true, [otherUser.uid]: true },
         updatedAt: Date.now(),
         lastMessage: '',
-      });
+      };
+      updates[`userConversations/${userProfile.uid}/${directConversationId}`] = true;
+      updates[`userConversations/${otherUser.uid}/${directConversationId}`] = true;
+      
+      await update(ref(db), updates);
       
       onSelectConversation(directConversationId);
       onClose();
@@ -120,12 +127,20 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
     }
 
     try {
-      const participants = [userProfile.uid, ...Array.from(selectedUsers)];
+      const participantUids = [userProfile.uid, ...Array.from(selectedUsers)];
+      const participantsObj: Record<string, boolean> = {};
+      participantUids.forEach(uid => participantsObj[uid] = true);
+      
       const groupNameTrimmed = groupName.trim();
       const now = Date.now();
-      const convoRef = await addDoc(collection(db, 'conversations'), {
+      const newConvoRef = push(ref(db, 'conversations'));
+      const convoId = newConvoRef.key;
+      const msgRef = push(ref(db, `conversations/${convoId}/messages`));
+      
+      const updates: any = {};
+      updates[`conversations/${convoId}`] = {
         type: 'group',
-        participants,
+        participants: participantsObj,
         groupName: groupNameTrimmed,
         createdBy: userProfile.uid,
         createdAt: now,
@@ -133,18 +148,29 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
         updatedAt: now,
         lastMessage: `${userProfile.displayName} created this group`,
         lastMessageTimestamp: now,
+      };
+      
+      participantUids.forEach(uid => {
+        updates[`userConversations/${uid}/${convoId}`] = true;
       });
-
-      // Add system message
-      await addDoc(collection(db, `conversations/${convoRef.id}/messages`), {
+      
+      updates[`conversations/${convoId}/messages/${msgRef.key}`] = {
         senderId: null,
         type: 'system',
         text: `${userProfile.displayName} created this group`,
         timestamp: now,
         readBy: []
-      });
+      };
       
-      onSelectConversation(convoRef.id);
+      participantUids.forEach(uid => {
+        updates[`userConversations/${uid}/${convoId}`] = true;
+      });
+
+      await update(ref(db), updates);
+      
+      if (convoId) {
+        onSelectConversation(convoId);
+      }
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -231,7 +257,10 @@ export default function NewChatModal({ onClose, onSelectConversation }: NewChatM
                 <input 
                   type="text" 
                   value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value.slice(0, 30);
+                    setGroupName(stripHTML(val));
+                  }}
                   placeholder="e.g. Weekend Plan"
                   className="w-full p-2.5 bg-background border border-border rounded-xl focus:ring-2 focus:ring-accent focus:outline-none"
                 />

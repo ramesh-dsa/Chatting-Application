@@ -1,9 +1,23 @@
 import { useState, useEffect } from 'react';
-import { doc, runTransaction } from 'firebase/firestore';
+import { ref, runTransaction } from 'firebase/database';
 import { db } from '../lib/firebase';
 import type { Message, UserProfile } from '../types';
 import { Check, BarChart2, X } from 'lucide-react';
 import { Avatar } from './ui/Avatar';
+
+// Helper to normalize Firebase sparse arrays or boolean maps into a clean string array of UIDs
+const getVotersArray = (votersData: any): string[] => {
+  if (!votersData) return [];
+  if (Array.isArray(votersData)) return votersData.filter(Boolean);
+  if (typeof votersData === 'object') {
+    const values = Object.values(votersData);
+    if (values.length > 0 && typeof values[0] === 'boolean') {
+      return Object.keys(votersData).filter(uid => votersData[uid]);
+    }
+    return values.filter(v => typeof v === 'string') as string[];
+  }
+  return [];
+};
 
 interface PollDisplayProps {
   message: Message;
@@ -23,9 +37,18 @@ export default function PollDisplay({ message, conversationId, currentUserId, us
     setOptimisticPollData(message.pollData);
   }, [message.pollData]);
 
-  const pollData = optimisticPollData || message.pollData;
+  const rawPollData = optimisticPollData || message.pollData;
 
-  if (!pollData) return null;
+  if (!rawPollData) return null;
+
+  // Normalize options to guarantee voters is a clean array
+  const pollData = {
+    ...rawPollData,
+    options: rawPollData.options.map(opt => ({
+      ...opt,
+      voters: getVotersArray(opt.voters)
+    }))
+  };
 
   // Calculate totals
   const totalVotes = pollData.options.reduce((sum, opt) => sum + opt.voters.length, 0);
@@ -59,47 +82,40 @@ export default function PollDisplay({ message, conversationId, currentUserId, us
 
     setErrorMsg(null);
     try {
-      const messageRef = doc(db, `conversations/${conversationId}/messages`, message.id);
+      const messageRef = ref(db, `conversations/${conversationId}/messages/${message.id}`);
       
-      await runTransaction(db, async (transaction) => {
-        const sfDoc = await transaction.get(messageRef);
-        if (!sfDoc.exists()) {
-          throw new Error("Message does not exist!");
-        }
+      await runTransaction(messageRef, (currentData) => {
+        if (!currentData || !currentData.pollData) return currentData;
 
-        const data = sfDoc.data() as Message;
-        if (!data.pollData) return;
-
-        // Deep copy to prevent mutating the snapshot
-        const updatedOptions = data.pollData.options.map(opt => ({
+        // Deep copy and normalize to prevent mutating the snapshot and handle Firebase sparse arrays
+        const updatedOptions = currentData.pollData.options.map((opt: any) => ({
           ...opt,
-          voters: [...opt.voters]
+          voters: getVotersArray(opt.voters)
         }));
-        const optionIndex = updatedOptions.findIndex(o => o.id === optionId);
+        const optionIndex = updatedOptions.findIndex((o: any) => o.id === optionId);
         
-        if (optionIndex === -1) return;
+        if (optionIndex === -1) return currentData;
 
         const hasVotedForThis = updatedOptions[optionIndex].voters.includes(currentUserId);
 
         // If not multiple answers, remove user's vote from all other options
-        if (!data.pollData.multipleAnswers) {
-          updatedOptions.forEach((opt, idx) => {
+        if (!currentData.pollData.multipleAnswers) {
+          updatedOptions.forEach((opt: any, idx: number) => {
             if (idx !== optionIndex) {
-              opt.voters = opt.voters.filter(uid => uid !== currentUserId);
+              opt.voters = opt.voters.filter((uid: string) => uid !== currentUserId);
             }
           });
         }
 
         // Toggle vote for the clicked option
         if (hasVotedForThis) {
-          updatedOptions[optionIndex].voters = updatedOptions[optionIndex].voters.filter(uid => uid !== currentUserId);
+          updatedOptions[optionIndex].voters = updatedOptions[optionIndex].voters.filter((uid: string) => uid !== currentUserId);
         } else {
           updatedOptions[optionIndex].voters.push(currentUserId);
         }
 
-        transaction.update(messageRef, {
-          'pollData.options': updatedOptions
-        });
+        currentData.pollData.options = updatedOptions;
+        return currentData;
       });
     } catch (err: any) {
       console.error('Failed to vote:', err);
