@@ -318,7 +318,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     pc.ontrack = (event) => {
+      console.log("✓ Remote track received!", event.track.kind, "enabled:", event.track.enabled);
       if (event.streams && event.streams[0]) {
+        console.log("✓ Binding remote stream:", event.streams[0]);
         setRemoteStream(event.streams[0]);
       }
     };
@@ -341,8 +343,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     if (localStreamRef.current) {
+      console.log("🔊 Adding local tracks to peer connection...");
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current!);
+        console.log(`✓ Added track: ${track.kind}, enabled: ${track.enabled}`);
       });
     }
     
@@ -352,7 +356,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const initiateCall = async (calleeId: string, calleeName: string, calleePhoto: string, type: CallType, conversationId: string) => {
     if (!currentUser || !userProfile) return;
     try {
+      console.log("1. Getting microphone/camera access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+      console.log("✓ getUserMedia SUCCESS. Tracks:", stream.getTracks());
+      
       localStreamRef.current = stream;
       setLocalStream(stream);
       setIsMuted(false);
@@ -413,7 +420,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!call || !callDocRef.current) return;
     
     try {
+      console.log("1. (Callee) Getting microphone/camera access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.type === 'video' });
+      console.log("✓ getUserMedia SUCCESS. Tracks:", stream.getTracks());
+      
       localStreamRef.current = stream;
       setLocalStream(stream);
       setIsMuted(false);

@@ -16,6 +16,7 @@ export default function CallOverlay() {
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
   
@@ -39,6 +40,9 @@ export default function CallOverlay() {
     }
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+    }
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
     }
   }, [localStream, remoteStream, activeCall?.status]);
 
@@ -119,6 +123,16 @@ export default function CallOverlay() {
           autoPlay 
           playsInline 
           className="absolute inset-0 w-full h-full object-cover"
+        />
+      )}
+
+      {/* Remote Audio (if ongoing voice call) */}
+      {activeCall.status === 'ongoing' && !isVideo && (
+        <audio 
+          ref={remoteAudioRef} 
+          autoPlay 
+          playsInline 
+          className="hidden"
         />
       )}
 
