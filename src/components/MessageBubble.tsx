@@ -299,28 +299,42 @@ const MessageBubble = function MessageBubble({
             <span className="text-xs font-medium text-emerald-600 ml-1 mb-1">{senderProfile.displayName}</span>
           )}
           
-          <div 
-            id={`msg-${message.id}`}
-            ref={bubbleRef}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            onTouchMove={clearLongPressTimer}
-            onContextMenu={(e) => e.preventDefault()}
-            onPointerLeave={(e) => {
-              if (e.pointerType === 'mouse') {
-                setShowMenu(false);
-                setShowReactPicker(false);
-              }
-            }}
-            style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-            className={`px-3 py-2 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none max-w-xs break-words ${radiusClass} ${
-              isHighlighted || isSelected
-                ? 'bg-accent/40 text-gray-900 ring-2 ring-accent ring-offset-2'
-                : isOwnMessage 
-                  ? 'bg-blue-200 text-gray-900' 
-                  : 'bg-gray-200 text-gray-900'
-            }`}
-          >
+          <div className="relative group flex items-center">
+            {!selectionMode && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReactPicker(!showReactPicker);
+                }}
+                className={`hidden md:flex absolute top-1/2 -translate-y-1/2 ${isOwnMessage ? '-left-10' : '-right-10'} p-1.5 rounded-full bg-surface border border-border shadow-sm text-muted-foreground opacity-0 group-hover:opacity-100 transition-all hover:scale-110 hover:text-foreground z-10`}
+                title="React"
+              >
+                <SmilePlus className="w-4 h-4" />
+              </button>
+            )}
+
+            <div 
+              id={`msg-${message.id}`}
+              ref={bubbleRef}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onTouchMove={clearLongPressTimer}
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerLeave={(e) => {
+                if (e.pointerType === 'mouse') {
+                  setShowMenu(false);
+                  setShowReactPicker(false);
+                }
+              }}
+              style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+              className={`px-3 py-2 relative shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none max-w-xs break-words ${radiusClass} ${
+                isHighlighted || isSelected
+                  ? 'bg-accent/40 text-gray-900 ring-2 ring-accent ring-offset-2'
+                  : isOwnMessage 
+                    ? 'bg-blue-200 text-gray-900' 
+                    : 'bg-gray-200 text-gray-900'
+              }`}
+            >
             {/* Reply Quote */}
             {message.replyTo && (
               <div className={`mb-1.5 px-2 py-1 rounded-md border-l-2 ${isOwnMessage ? 'bg-black/5 border-emerald-600' : 'bg-black/5 border-accent'}`}>
@@ -471,23 +485,11 @@ const MessageBubble = function MessageBubble({
               </button>
             )}
 
-            {/* Hover Reaction Button */}
-            {!selectionMode && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowReactPicker(!showReactPicker);
-                }}
-                className={`absolute top-1 right-6 p-0.5 rounded-full bg-black/5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${showReactPicker ? 'opacity-100' : ''}`}
-                title="React"
-              >
-                <SmilePlus className="w-4 h-4" />
-              </button>
-            )}
+            {/* Hover Reaction Button - MOVED TO WRAPPER */}
 
             {/* Reaction Emoji Picker */}
             {showReactPicker && (
-              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} ${isOwnMessage ? 'right-1' : 'left-1'} bg-surface border border-border shadow-lg rounded-full py-1 px-1 z-[100] flex items-center gap-0.5`}>
+              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} ${isOwnMessage ? 'right-0' : 'left-0'} bg-surface border border-border shadow-xl rounded-full px-3 py-2 z-[100] flex items-center gap-2 animate-in zoom-in-95 fade-in duration-150`}>
                 {REACTION_EMOJIS.map(emoji => (
                   <button
                     key={emoji}
@@ -496,7 +498,7 @@ const MessageBubble = function MessageBubble({
                       onReact?.(message.id, emoji);
                       setShowReactPicker(false);
                     }}
-                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-surface-hover rounded-full transition-transform hover:scale-110"
+                    className="w-10 h-10 flex items-center justify-center text-2xl hover:bg-surface-hover rounded-full transition-transform hover:scale-125"
                   >
                     {emoji}
                   </button>
@@ -633,9 +635,9 @@ const MessageBubble = function MessageBubble({
             )}
           </div>
 
-          {/* Reaction Chips */}
+          {/* Reaction Badge */}
           {!selectionMode && (Object.entries(message.reactions || {}).some(([, uids]) => safeLength(uids) > 0)) && (
-            <div className={`flex flex-wrap items-center gap-1 mt-1 z-10 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+            <div className={`absolute -bottom-3 -right-2 flex items-center gap-0.5 z-10 bg-surface border border-border shadow-sm rounded-full px-1 py-0.5`}>
               {Object.entries(message.reactions || {})
                 .filter(([, uids]) => safeLength(uids) > 0)
                 .map(([emoji, uids]) => (
@@ -645,16 +647,18 @@ const MessageBubble = function MessageBubble({
                       e.stopPropagation();
                       onReact?.(message.id, emoji);
                     }}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border shadow-sm transition-colors ${
-                      safeIncludes(uids, currentUserId) ? 'bg-accent/20 border-accent/50' : 'bg-surface border-border'
+                    className={`flex items-center gap-1 px-1 rounded-full transition-colors ${
+                      safeIncludes(uids, currentUserId) ? 'bg-accent/10' : 'hover:bg-surface-hover'
                     }`}
                   >
-                    <span className="text-sm">{emoji}</span>
-                    <span className="font-medium text-foreground/80">{safeLength(uids)}</span>
+                    <span className="text-xs">{emoji}</span>
+                    <span className={`text-[11px] font-medium ${safeIncludes(uids, currentUserId) ? 'text-accent' : 'text-foreground/80'}`}>{safeLength(uids)}</span>
                   </button>
                 ))}
             </div>
           )}
+          </div>
+
         </div>
       </div>
     </div>
