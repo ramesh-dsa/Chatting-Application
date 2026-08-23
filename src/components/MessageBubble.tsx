@@ -191,19 +191,20 @@ const MessageBubble = function MessageBubble({
 
   const marginBottom = isLastInGroup ? 'mb-4' : 'mb-[2px]';
 
+  // Helper to handle mixed type strings or objects and prevent duplicates from inflating counts.
+  const getUniqueUids = (data: any) => {
+    if (!data) return new Set<string>();
+    if (Array.isArray(data)) return new Set<string>(data.map(r => typeof r === 'string' ? r : r.uid));
+    if (typeof data === 'object') return new Set<string>(Object.keys(data));
+    return new Set<string>();
+  };
+
   // Calculate message status ticks for own messages
   let tickState = 'sent'; // 'sent' | 'delivered' | 'read'
   if (isOwnMessage) {
     const otherParticipantCount = participantCount - 1;
-    // msg.readBy includes the sender. Handle mixed type strings or objects and prevent duplicates from inflating counts.
-    const getUniqueUids = (data: any) => {
-      if (!data) return new Set();
-      if (Array.isArray(data)) return new Set(data.map(r => typeof r === 'string' ? r : r.uid));
-      if (typeof data === 'object') return new Set(Object.keys(data));
-      return new Set();
-    };
     const uniqueReaders = getUniqueUids(message.readBy);
-    const readCount = Math.max(0, uniqueReaders.size - (uniqueReaders.has(message.senderId) ? 1 : 0));
+    const readCount = Math.max(0, uniqueReaders.size - (message.senderId && uniqueReaders.has(message.senderId) ? 1 : 0));
     const deliveredCount = getUniqueUids(message.deliveredTo).size;
 
     if (readCount >= otherParticipantCount && otherParticipantCount > 0) {
@@ -236,8 +237,14 @@ const MessageBubble = function MessageBubble({
     }
   };
 
+  const isUnread = !isOwnMessage && !getUniqueUids(message.readBy).has(currentUserId);
+
   return (
-    <div className={`flex w-full ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-2' : ''}`}>
+    <div 
+      className={`flex w-full ${showMenu || showReactPicker ? 'z-50 relative' : ''} ${marginBottom} ${isOwnMessage ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-2' : ''}`}
+      data-message-id={message.id}
+      data-is-unread={isUnread ? "true" : "false"}
+    >
       {selectionMode && (
         <div className="flex items-center justify-center mr-3 mt-auto mb-2" onClick={() => message.type !== 'poll' && onToggleSelect?.(message.id)}>
           {message.type !== 'poll' ? (
@@ -412,8 +419,8 @@ const MessageBubble = function MessageBubble({
               </div>
             )}
 
-            {/* Timestamp & Ticks placed absolutely at the bottom right of the bubble inner container */}
-            <div className="absolute bottom-[4px] right-[8px] flex items-center justify-end gap-1 shrink-0 z-10">
+            {/* Timestamp & Ticks placed relatively at the bottom right */}
+            <div className="relative self-end flex items-center justify-end gap-1 shrink-0 mt-1 -mr-1 -mb-1">
               {message.edited && (
                 <span className="text-[11px] text-muted italic">edited</span>
               )}
@@ -440,7 +447,7 @@ const MessageBubble = function MessageBubble({
                   e.stopPropagation();
                   setShowMenu(!showMenu);
                 }}
-                className={`absolute top-1 right-1 p-0.5 rounded-full z-10 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${
+                className={`absolute top-1 right-1 p-0.5 rounded-full z-40 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity ${
                   showMenu ? 'opacity-100' : ''
                 } ${isOwnMessage ? 'bg-bg-msg-sent shadow-[0_0_6px_2px_rgba(227,242,253,0.8)] dark:shadow-[0_0_6px_2px_rgba(17,34,31,0.8)]' : 'bg-surface shadow-[0_0_6px_2px_rgba(255,255,255,0.8)] dark:shadow-[0_0_6px_2px_rgba(31,31,31,0.8)]'}`}
               >
@@ -483,7 +490,15 @@ const MessageBubble = function MessageBubble({
 
             {/* Dropdown Menu */}
             {showMenu && (
-              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} ${isOwnMessage ? 'right-2' : 'left-2'} bg-surface border border-border shadow-lg rounded-lg py-1 min-w-[120px] z-[100] overflow-hidden`}>
+              <>
+                <div 
+                  className="fixed inset-0 z-40" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(false);
+                  }} 
+                />
+                <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} ${isOwnMessage ? 'right-2' : 'left-2'} bg-surface border border-border shadow-lg rounded-lg py-1 min-w-[120px] z-50 overflow-hidden`}>
                 {message.type !== 'poll' && (
                   <button
                     onMouseDown={(e) => e.preventDefault()}
@@ -598,12 +613,13 @@ const MessageBubble = function MessageBubble({
                   </button>
                 )}
               </div>
+              </>
             )}
           </div>
 
           {/* Reaction Chips */}
           {!selectionMode && (Object.entries(message.reactions || {}).some(([, uids]) => safeLength(uids) > 0)) && (
-            <div className={`flex flex-wrap items-center gap-1 mt-1 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+            <div className={`flex flex-wrap items-center gap-1 mt-1 z-10 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
               {Object.entries(message.reactions || {})
                 .filter(([, uids]) => safeLength(uids) > 0)
                 .map(([emoji, uids]) => (

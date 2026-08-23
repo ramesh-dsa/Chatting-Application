@@ -23,6 +23,8 @@ export interface Conversation {
   updatedAt: number;
   unreadCounts?: Record<string, number>;
   typing?: Record<string, number>; // uid -> last typing timestamp (ms)
+  favoritedBy?: Record<string, boolean>; // uid -> true
+  deletedFor?: Record<string, number>; // uid -> timestamp of when they deleted it
 }
 
 export interface PollOption {

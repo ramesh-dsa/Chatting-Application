@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, get, update } from 'firebase/database';
-import { Plus, Search, MessageSquare, LogOut, Users } from 'lucide-react';
+import { Plus, Search, MessageSquare, LogOut, Users, Star, Trash2 } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import type { Conversation, UserProfile, Message } from '../types';
@@ -36,6 +36,25 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
+
+  type FilterTab = 'all' | 'unread' | 'groups' | 'favorites';
+  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  
+  const [contextMenuConvoId, setContextMenuConvoId] = useState<string | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number, y: number } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenuConvoId) {
+        setContextMenuConvoId(null);
+        setContextMenuPos(null);
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [contextMenuConvoId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -211,6 +230,20 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
   };
 
   const filteredConversations = conversations.filter(c => {
+    if (currentUser && c.deletedFor?.[currentUser.uid]) {
+      const lastActive = Math.max(c.updatedAt || 0, c.lastMessageTimestamp || 0);
+      if (lastActive <= c.deletedFor[currentUser.uid]) return false;
+    }
+
+    if (activeTab === 'unread') {
+      const unreadCount = (currentUser && c.unreadCounts?.[currentUser.uid]) || 0;
+      if (unreadCount === 0) return false;
+    } else if (activeTab === 'groups') {
+      if (c.type !== 'group') return false;
+    } else if (activeTab === 'favorites') {
+      if (!currentUser || !c.favoritedBy?.[currentUser.uid]) return false;
+    }
+
     if (debouncedSearchQuery.trim() === '') return true;
     
     let name = '';
@@ -311,9 +344,65 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
     return <MyProfilePanel onClose={() => setShowMyProfile(false)} />;
   }
 
+  const handleToggleFavorite = async (convoId: string, currentStatus: boolean) => {
+    if (!currentUser) return;
+    try {
+      const updates: Record<string, any> = {};
+      if (currentStatus) {
+        updates[`conversations/${convoId}/favoritedBy/${currentUser.uid}`] = null;
+      } else {
+        updates[`conversations/${convoId}/favoritedBy/${currentUser.uid}`] = true;
+      }
+      await update(ref(db), updates);
+    } catch (e) {
+      console.error("Failed to toggle favorite:", e);
+    }
+    setContextMenuConvoId(null);
+  };
 
+  const handleDeleteChat = async (convoId: string) => {
+    if (!currentUser) return;
+    if (!window.confirm("Delete this chat? This cannot be undone.")) {
+      setContextMenuConvoId(null);
+      return;
+    }
+    try {
+      const updates: Record<string, any> = {};
+      updates[`conversations/${convoId}/deletedFor/${currentUser.uid}`] = Date.now();
+      await update(ref(db), updates);
+    } catch (e) {
+      console.error("Failed to delete chat:", e);
+    }
+    setContextMenuConvoId(null);
+    if (activeConversationId === convoId) {
+      onSelectConversation(''); 
+    }
+  };
 
-  return (
+  const handleTouchStart = (e: React.TouchEvent, convoId: string) => {
+    isLongPressTriggeredRef.current = false;
+    const touch = e.touches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      setContextMenuConvoId(convoId);
+      setContextMenuPos({ x, y });
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, convoId: string) => {
+    e.preventDefault();
+    setContextMenuConvoId(convoId);
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+  };  return (
     <div className="w-full h-full flex flex-col bg-bg-sidebar border-r border-border">
       {/* Header */}
       <div className="p-4 border-b border-border flex items-center justify-between">
@@ -360,6 +449,23 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
         )}
       </div>
 
+      {/* Filter Tabs */}
+      <div className="px-4 pb-2 flex space-x-2 overflow-x-auto scrollbar-none">
+        {(['all', 'unread', 'favorites', 'groups'] as FilterTab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              activeTab === tab
+                ? 'bg-accent/10 text-accent'
+                : 'hover:bg-black/5 text-muted-foreground bg-bg-app'
+            }`}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
+
       {/* Conversation List */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {isLoading || !isUsersLoaded ? (
@@ -381,8 +487,13 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
             ) : (
               <>
                 <MessageSquare className="w-8 h-8 mb-3 opacity-20" />
-                <p className="text-sm">No conversations yet.</p>
-                <p className="text-xs mt-1">Click the + button to start one.</p>
+                <p className="text-sm">
+                  {activeTab === 'unread' ? "No unread chats." :
+                   activeTab === 'favorites' ? "No favorite chats yet." :
+                   activeTab === 'groups' ? "No group chats." :
+                   "No conversations yet."}
+                </p>
+                {activeTab === 'all' && <p className="text-xs mt-1">Click the + button to start one.</p>}
               </>
             )}
           </div>
@@ -400,7 +511,17 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
                     return (
                       <li key={convo.id}>
                         <button
-                          onClick={() => onSelectConversation(convo.id)}
+                          onClick={() => {
+                            if (isLongPressTriggeredRef.current) {
+                              isLongPressTriggeredRef.current = false;
+                              return;
+                            }
+                            onSelectConversation(convo.id);
+                          }}
+                          onTouchStart={(e) => handleTouchStart(e, convo.id)}
+                          onTouchEnd={handleTouchEnd}
+                          onTouchMove={handleTouchEnd}
+                          onContextMenu={(e) => handleContextMenu(e, convo.id)}
                           className={`w-full flex items-center p-3 rounded-xl transition-all ${
                             isActive 
                               ? 'bg-accent/10 text-foreground' 
@@ -546,6 +667,38 @@ export default function Sidebar({ activeConversationId, onSelectConversation, us
       {isNewChatModalOpen && (
         <NewChatModal onClose={() => setIsNewChatModalOpen(false)} onSelectConversation={onSelectConversation} />
       )}
+
+      {contextMenuConvoId && contextMenuPos && (() => {
+        const convo = conversations.find(c => c.id === contextMenuConvoId);
+        if (!convo) return null;
+        const isFavorited = !!(currentUser && convo.favoritedBy?.[currentUser.uid]);
+        
+        return (
+          <div 
+            className="fixed z-50 bg-bg-popover border border-border rounded-xl shadow-lg py-1 min-w-[160px] overflow-hidden"
+            style={{ 
+              top: Math.min(contextMenuPos.y, window.innerHeight - 100), 
+              left: Math.min(contextMenuPos.x, window.innerWidth - 180) 
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => handleToggleFavorite(convo.id, isFavorited)}
+              className="w-full text-left px-4 py-3 text-sm hover:bg-surface-hover flex items-center text-foreground transition-colors"
+            >
+              <Star className={`w-4 h-4 mr-3 ${isFavorited ? 'fill-accent text-accent' : ''}`} />
+              {isFavorited ? 'Remove Favorite' : 'Add Favorite'}
+            </button>
+            <button
+              onClick={() => handleDeleteChat(convo.id)}
+              className="w-full text-left px-4 py-3 text-sm hover:bg-surface-hover flex items-center text-destructive transition-colors"
+            >
+              <Trash2 className="w-4 h-4 mr-3" />
+              Delete Chat
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

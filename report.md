@@ -29,3 +29,12 @@
   - **Horizontal Scroll**: Added `overflow-x-hidden` to `ChatWindow.tsx` and `min-w-0` properties to prevent flex children from expanding out of bounds.
   - **Input Focus**: Passed `conversationId` to `MessageInput.tsx` for a `useEffect` auto-focus on open. Retained focus after send by calling `.focus()` on the ref. Prevented mobile focus stealing by attaching `e.preventDefault()` on both `onMouseDown` and `onTouchStart` to the send button.
 - **Limitations/Edge Cases**: The PWA back navigation relies on the browser's history API, which requires the initial app load to establish the base state correctly. Mobile keyboard resizing relies heavily on `100dvh` which is typically robust in modern browsers.
+
+## Session 2 UI Overlay Fixes
+- **Problem/Request**: Header text ("last seen") was overlapping action icons. Message timestamps were rendering absolutely on top of long message content. The three-dot context menu was improperly layering under subsequent message bubbles, and lacking a dismissible backdrop.
+- **Files Changed**: `src/components/ChatWindow.tsx`, `src/components/MessageBubble.tsx`
+- **Summary**:
+  - **Header Layout**: Added `flex-1` and `min-w-0` to the header text wrapper and `shrink-0` to the action icons container in `ChatWindow.tsx`, fixing overlaps while maintaining proper text truncation.
+  - **Timestamp Positioning**: Moved message timestamps in `MessageBubble.tsx` from absolute positioning to relative, utilizing `float-right`-like flex styling (`mt-1 -mr-1 -mb-1` combined with `self-end`) to flow naturally to the bottom right of the message container without covering text.
+  - **Context Menu Stacking**: Added conditional `z-50 relative` classes to the outermost message bubble wrapper when the context menu is open. Additionally, implemented a `fixed inset-0 z-40` transparent backdrop overlay to properly capture outside clicks, and elevated the trigger button to `z-40`.
+- **Limitations/Edge Cases**: Relative timestamp placement may slightly expand the bubble's bottom padding when wrapping isn't necessary, but strictly avoids overlap. Backdrop uses fixed positioning which covers the entire screen robustly across viewports.

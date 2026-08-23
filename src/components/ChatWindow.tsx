@@ -15,6 +15,7 @@ import ImagePreviewModal from './ImagePreviewModal';
 import { Avatar } from './ui/Avatar';
 import { copyImageToClipboard } from '../lib/clipboard';
 import { isToday, isYesterday, isSameYear, format, isSameDay } from 'date-fns';
+import { formatLastSeen } from '../utils/formatLastSeen';
 
 function getDateSeparatorLabel(date: Date): string {
   if (isToday(date)) return 'Today';
@@ -60,6 +61,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // IntersectionObserver refs for read receipts
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const visibleUnreadMsgIds = useRef<Set<string>>(new Set());
+  const batchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [messageLimit, setMessageLimit] = useState(50);
   const isFetchingOlderRef = useRef(false);
@@ -503,6 +510,65 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
     lastScrollHeightRef.current = 0;
   }, [conversationId]);
 
+  // Read receipt intersection observer setup
+  useEffect(() => {
+    if (!currentUser || !conversationId || !scrollContainerRef.current) return;
+
+    const handleReadBatch = () => {
+      if (visibleUnreadMsgIds.current.size === 0) return;
+      
+      const updates: Record<string, any> = {};
+      visibleUnreadMsgIds.current.forEach(id => {
+        updates[`conversations/${conversationId}/messages/${id}/readBy/${currentUser.uid}`] = true;
+      });
+      
+      update(ref(db), updates).catch(console.error);
+      visibleUnreadMsgIds.current.clear();
+    };
+
+    observerRef.current = new IntersectionObserver((entries) => {
+      let hasNewRead = false;
+      
+      entries.forEach(entry => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+          const msgId = entry.target.getAttribute('data-message-id');
+          const isUnread = entry.target.getAttribute('data-is-unread') === 'true';
+          
+          if (msgId && isUnread) {
+            visibleUnreadMsgIds.current.add(msgId);
+            hasNewRead = true;
+            observerRef.current?.unobserve(entry.target);
+            // Optimistically update DOM attribute to prevent re-triggering before React re-renders
+            entry.target.setAttribute('data-is-unread', 'false');
+          }
+        }
+      });
+      
+      if (hasNewRead) {
+        if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
+        batchTimeoutRef.current = setTimeout(handleReadBatch, 300);
+      }
+    }, {
+      root: scrollContainerRef.current,
+      threshold: 0.5
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+      if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
+      handleReadBatch(); // flush any pending writes on unmount
+    };
+  }, [currentUser, conversationId]);
+
+  // Observe newly added message elements when messages update
+  useEffect(() => {
+    if (!observerRef.current || !scrollContainerRef.current) return;
+    
+    // Select all unread messages
+    const unreadElements = scrollContainerRef.current.querySelectorAll('[data-is-unread="true"]');
+    unreadElements.forEach(el => observerRef.current?.observe(el));
+  }, [messages]);
+
   // Fetch messages
   useEffect(() => {
     if (!conversationId) return;
@@ -567,31 +633,24 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
       setMessages(msgs);
       setMessagesLoaded(true);
 
-      // Handle Read Receipts (Mark all unread messages from others as read & delivered)
+      // Reset unread count immediately upon opening the chat, and mark delivered
       if (currentUser && msgs.length > 0) {
-        const unreadMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.readBy.includes(currentUser.uid));
-        
-        if (unreadMsgs.length > 0) {
-          const updates: Record<string, any> = {};
-          unreadMsgs.forEach(m => {
-            updates[`conversations/${conversationId}/messages/${m.id}/readBy/${currentUser.uid}`] = true;
-            updates[`conversations/${conversationId}/messages/${m.id}/deliveredTo/${currentUser.uid}`] = true;
-          });
-          
-          // Also reset unread count for current user
-          updates[`conversations/${conversationId}/unreadCounts/${currentUser.uid}`] = 0;
-          
+        const updates: Record<string, any> = {};
+        let hasUpdates = false;
+
+        // Ensure unread badge clears
+        updates[`conversations/${conversationId}/unreadCounts/${currentUser.uid}`] = 0;
+        hasUpdates = true;
+
+        // Check if any messages are just undelivered and mark them delivered
+        const undeliveredMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.deliveredTo?.includes(currentUser.uid));
+        undeliveredMsgs.forEach(m => {
+          updates[`conversations/${conversationId}/messages/${m.id}/deliveredTo/${currentUser.uid}`] = true;
+          hasUpdates = true;
+        });
+
+        if (hasUpdates) {
           update(ref(db), updates).catch(console.error);
-        } else {
-          // Check if any messages are just undelivered and mark them delivered
-          const undeliveredMsgs = msgs.filter(m => m.type !== 'system' && m.senderId !== currentUser.uid && !m.deliveredTo?.includes(currentUser.uid));
-          if (undeliveredMsgs.length > 0) {
-            const updates: Record<string, any> = {};
-            undeliveredMsgs.forEach(m => {
-              updates[`conversations/${conversationId}/messages/${m.id}/deliveredTo/${currentUser.uid}`] = true;
-            });
-            update(ref(db), updates).catch(console.error);
-          }
         }
       }
     }, (error) => {
@@ -837,10 +896,17 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
   if (conversation.type === 'direct') {
     const participantKeys = conversation?.participants ? Object.keys(conversation.participants) : [];
-                    const otherUid = participantKeys.find(uid => uid !== currentUser?.uid);
+    const otherUid = participantKeys.find(uid => uid !== currentUser?.uid);
     const otherUser = otherUid ? usersMap[otherUid] : null;
     chatTitle = otherUser?.displayName || 'User';
-    chatStatus = otherUser?.isOnline ? 'Online' : (otherUser?.statusMessage || 'Hey there! I am using Chat.');
+    
+    if (otherUser?.isOnline) {
+      chatStatus = 'Online';
+    } else {
+      const lastSeenStr = formatLastSeen(otherUser?.lastSeen);
+      chatStatus = lastSeenStr ? lastSeenStr : (otherUser?.statusMessage || 'Hey there! I am using Chat.');
+    }
+    
     chatAvatar = otherUser?.photoURL || 'https://api.dicebear.com/7.x/initials/svg?seed=U';
   }
 
@@ -959,7 +1025,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               </div>
             </div>
           ) : (
-            <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
+            <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
               {onBack && (
                 <button 
                   onClick={onBack}
@@ -970,7 +1036,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               )}
               <button 
                 onClick={() => conversation.type === 'group' && setShowGroupInfo(true)}
-                className={`flex items-center space-x-3 text-left min-w-0 ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
+                className={`flex items-center space-x-3 text-left min-w-0 flex-1 ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
               >
                 <div className="relative">
                   {chatAvatar ? (
@@ -984,16 +1050,16 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
                   )}
                 </div>
-                <div className="ml-1 flex flex-col justify-center min-w-0">
+                <div className="ml-1 flex flex-col justify-center min-w-0 flex-1">
                   <h2 className="text-[16px] font-normal text-foreground leading-5 truncate">{chatTitle}</h2>
-                  <p className="text-[13px] text-muted font-normal mt-0.5 truncate">{chatStatus}</p>
+                  <p className="text-[13px] text-muted-foreground font-normal mt-0.5 truncate block">{chatStatus}</p>
                 </div>
               </button>
             </div>
           )}
 
           {!isSearching && (
-            <div className="flex items-center space-x-2 relative">
+            <div className="flex items-center space-x-2 relative shrink-0">
               <button 
                 onClick={() => setShowMediaGallery(true)}
                 className="p-2 text-muted-foreground hover:bg-black/5 hover:text-foreground rounded-full transition-colors"

@@ -8,8 +8,8 @@ import {
   User,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+
 import { Avatar } from "./ui/Avatar";
-import GlassSurface from "./ui/GlassSurface";
 
 interface IconRailProps {
   onProfileClick: () => void;
