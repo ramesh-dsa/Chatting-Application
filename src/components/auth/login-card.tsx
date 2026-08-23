@@ -1,36 +1,56 @@
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { auth } from '../../lib/firebase';
 
+// 1. Zod Schemas for Validation
+const loginSchema = z.object({
+  email: z.string().trim().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+const signupSchema = loginSchema.extend({
+  confirmPassword: z.string().min(6, "Please confirm your password"),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"], // Error path
+});
+
+// TypeScript interfaces inferred from Zod schemas
+type LoginFormData = z.infer<typeof loginSchema>;
+type SignupFormData = z.infer<typeof signupSchema>;
+type FormData = SignupFormData; // Use the broader type for the form
+
 export default function LoginCard() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 2. React Hook Form Setup
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormData>({
+    resolver: zodResolver(isSignUp ? signupSchema : loginSchema),
+    mode: 'onBlur', // Validate on blur for better UX
+  });
+
+  const onSubmit = async (data: FormData) => {
     setErrorMessage(null);
-
-    if (isSignUp && password !== confirmPassword) {
-      setErrorMessage("Passwords do not match.");
-      return;
-    }
-
     setIsLoading(true);
 
     try {
       if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        await createUserWithEmailAndPassword(auth, data.email, data.password);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, data.email, data.password);
       }
-      setEmail('');
-      setPassword('');
-      setConfirmPassword('');
+      reset(); // Clear form on success
       setIsSuccess(true);
     } catch (err: any) {
       setErrorMessage(err.message || 'Authentication failed. Please try again.');
@@ -59,9 +79,7 @@ export default function LoginCard() {
     e.preventDefault();
     setIsSignUp(!isSignUp);
     setErrorMessage(null);
-    setEmail('');
-    setPassword('');
-    setConfirmPassword('');
+    reset(); // Clear errors and fields when switching modes
   };
 
   if (isSuccess) {
@@ -109,21 +127,24 @@ export default function LoginCard() {
       )}
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-6 relative z-20">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 relative z-20">
         <div>
           <label className="block text-xs md:text-sm font-medium text-gray-300 mb-2 ml-1">
-            Email or Username
+            Email
           </label>
           <input
             type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            {...register("email")}
             disabled={isLoading}
             autoComplete="username"
-            className="w-full py-3.5 px-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-purple-400 focus:ring-4 focus:ring-purple-500/20 transition-all duration-300 text-sm md:text-base disabled:opacity-50"
-            placeholder="Enter your email or username"
-            required
+            className={`w-full py-3.5 px-4 rounded-2xl bg-white/5 border ${errors.email ? 'border-red-400/60 focus:border-red-400 focus:ring-red-400/20' : 'border-white/10 focus:border-purple-400 focus:ring-purple-500/20'} text-white placeholder-white/30 focus:outline-none focus:ring-4 transition-all duration-300 text-sm md:text-base disabled:opacity-50`}
+            placeholder="Enter your email"
           />
+          {errors.email && (
+            <p className="mt-1.5 ml-1 text-xs text-red-400 font-medium animate-in fade-in slide-in-from-top-1">
+              {errors.email.message}
+            </p>
+          )}
         </div>
 
         <div>
@@ -139,14 +160,17 @@ export default function LoginCard() {
           </div>
           <input
             type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            {...register("password")}
             disabled={isLoading}
             autoComplete={isSignUp ? "new-password" : "current-password"}
-            className="w-full py-3.5 px-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-purple-400 focus:ring-4 focus:ring-purple-500/20 transition-all duration-300 text-sm md:text-base disabled:opacity-50"
+            className={`w-full py-3.5 px-4 rounded-2xl bg-white/5 border ${errors.password ? 'border-red-400/60 focus:border-red-400 focus:ring-red-400/20' : 'border-white/10 focus:border-purple-400 focus:ring-purple-500/20'} text-white placeholder-white/30 focus:outline-none focus:ring-4 transition-all duration-300 text-sm md:text-base disabled:opacity-50`}
             placeholder="Enter your password"
-            required
           />
+          {errors.password && (
+            <p className="mt-1.5 ml-1 text-xs text-red-400 font-medium animate-in fade-in slide-in-from-top-1">
+              {errors.password.message}
+            </p>
+          )}
         </div>
 
         {isSignUp && (
@@ -156,14 +180,17 @@ export default function LoginCard() {
             </label>
             <input
               type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              {...register("confirmPassword")}
               disabled={isLoading}
               autoComplete="new-password"
-              className="w-full py-3.5 px-4 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:outline-none focus:border-purple-400 focus:ring-4 focus:ring-purple-500/20 transition-all duration-300 text-sm md:text-base disabled:opacity-50"
+              className={`w-full py-3.5 px-4 rounded-2xl bg-white/5 border ${errors.confirmPassword ? 'border-red-400/60 focus:border-red-400 focus:ring-red-400/20' : 'border-white/10 focus:border-purple-400 focus:ring-purple-500/20'} text-white placeholder-white/30 focus:outline-none focus:ring-4 transition-all duration-300 text-sm md:text-base disabled:opacity-50`}
               placeholder="Enter your password again"
-              required
             />
+            {errors.confirmPassword && (
+              <p className="mt-1.5 ml-1 text-xs text-red-400 font-medium animate-in fade-in slide-in-from-top-1">
+                {errors.confirmPassword.message}
+              </p>
+            )}
           </div>
         )}
 

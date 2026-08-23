@@ -1,40 +1,51 @@
 {
   "rules": {
-    ".read": false,
-    ".write": false,
+    ".read": "auth != null",
+    
     "users": {
-      ".read": "auth != null",
       "$uid": {
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": "auth != null && $uid === auth.uid"
       }
     },
-    "userConversations": {
-      "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
-      }
-    },
+    
     "unreadCounts": {
-      "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+      "$conversationId": {
+        "$uid": {
+          ".write": "auth != null && (auth.uid === $uid || root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists())"
+        }
       }
     },
+    
     "conversations": {
       "$conversationId": {
-        ".read": "auth != null && data.child('participants').child(auth.uid).exists()",
-        ".write": "auth != null && (!data.exists() || data.child('participants').child(auth.uid).exists())",
+        ".write": "auth != null && (newData.exists() ? (!data.exists() ? newData.child('participants/' + auth.uid).val() === true : data.child('participants/' + auth.uid).exists()) : (data.child('isSelfChat').val() === true && data.child('participants/' + auth.uid).exists()))",
+        
+        "clearedAt": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid && root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists()",
+            ".validate": "newData.isNumber()"
+          }
+        },
         
         "messages": {
           "$messageId": {
-            ".validate": "newData.hasChildren(['senderId','text','timestamp']) && newData.child('senderId').val() == auth.uid && (!data.exists() || data.child('senderId').val() == auth.uid)"
-          }
-        },
-        "typing": {
-          // No special rules needed since parent handles .read and .write, 
-          // but we can add validation to ensure users only write their own typing status
-          "$uid": {
-            ".validate": "auth != null && auth.uid == $uid"
+            ".write": "auth != null && root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists() && (!data.exists() ? ((newData.child('senderId').val() === auth.uid || (newData.child('senderId').val() === 'system' && root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists())) && (root.child('conversations/' + $conversationId + '/settings/sendMessages').val() != 'admins' || root.child('conversations/' + $conversationId + '/admins/' + auth.uid).exists() || newData.child('senderId').val() === 'system')) : (!newData.exists() ? (data.child('senderId').val() === auth.uid || root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists()) : root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists()))",
+            
+            "text": {
+              ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 4000)"
+            },
+            
+            "deletedFor": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && root.child('conversations/' + $conversationId + '/participants/' + auth.uid).exists()",
+                ".validate": "newData.isBoolean()"
+              }
+            },
+            
+            "deletedForEveryone": {
+              ".write": "auth != null && root.child('conversations/' + $conversationId + '/messages/' + $messageId + '/senderId').val() === auth.uid",
+              ".validate": "newData.isBoolean()"
+            }
           }
         }
       }
