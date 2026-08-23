@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { db } from '../lib/firebase';
 import { 
-  ref, set, update, onValue, push, query as dbQuery, orderByChild, equalTo 
+  ref, set, update, onValue, push, query as dbQuery, orderByChild, equalTo, onDisconnect
 } from 'firebase/database';
 import { useAuth } from './AuthContext';
 import CallOverlay from '../components/CallOverlay';
@@ -25,6 +25,7 @@ export interface CallData {
   createdAt: number;
   endedAt?: number;
   conversationId: string;
+  acceptedBySessionId?: string;
 }
 
 interface CallContextType {
@@ -54,6 +55,21 @@ export const useCall = () => {
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
 };
 
@@ -69,6 +85,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const callDocRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string>(window.crypto?.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).slice(2));
   
   // Timers and cleanup refs
   const missedCallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,6 +96,25 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Keep track of activeCall in a ref for event handlers
   const activeCallRef = useRef<CallData | null>(null);
   activeCallRef.current = activeCall;
+
+  // Handle browser tab close/refresh (FIX 2)
+  useEffect(() => {
+    const handleUnload = () => {
+      const call = activeCallRef.current;
+      if (call && callDocRef.current && (call.status === 'ongoing' || call.status === 'ringing')) {
+        // Best-effort sync write to tell the other user the call ended
+        update(ref(db, `calls/${call.id}`), { status: 'ended', endedAt: Date.now() });
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+    };
+  }, []);
 
   // Cleanup function for peer connection and media
   const cleanupCall = useCallback(() => {
@@ -92,6 +128,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (missedCallTimer.current) clearTimeout(missedCallTimer.current);
     if (disconnectTimer.current) clearTimeout(disconnectTimer.current);
+    
+    // Cancel any pending onDisconnect write for this call
+    if (callDocRef.current) {
+      onDisconnect(ref(db, `calls/${callDocRef.current}`)).cancel();
+    }
     
     setLocalStream(null);
     setRemoteStream(null);
@@ -119,7 +160,28 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (callData.status === 'ringing') {
             // Simultaneous call edge case: if we are already in a call (or ringing)
             if (activeCallRef.current && activeCallRef.current.id !== callData.id) {
-              // We're busy! Auto-decline.
+              const currentCall = activeCallRef.current;
+              
+              // Handle mutual call collision (Fix 3)
+              if (currentCall.calleeId === callData.callerId) {
+                // Tiebreaker: compare UIDs alphabetically
+                if (currentUser.uid > callData.callerId) {
+                  // I yield: drop my outgoing call
+                  update(ref(db, `calls/${currentCall.id}`), { status: 'ended', endedAt: Date.now() });
+                  cleanupCall();
+                  
+                  // Accept their incoming call state to render ringing UI
+                  callDocRef.current = callData.id;
+                  setActiveCall(callData);
+                  return;
+                } else {
+                  // I win: ignore their incoming call completely.
+                  // Their client will yield, drop their call, and show my incoming call.
+                  return;
+                }
+              }
+
+              // We're busy with someone else! Auto-decline.
               update(ref(db, `calls/${callData.id}`), { status: 'busy', endedAt: Date.now() });
               return;
             }
@@ -149,6 +211,12 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveCall(data);
       
       const isCaller = data.callerId === currentUser?.uid;
+
+      // Handle multi-tab ghosting: if another tab accepted this incoming call, dismiss the UI here
+      if (!isCaller && data.status === 'ongoing' && data.acceptedBySessionId && data.acceptedBySessionId !== sessionIdRef.current) {
+        cleanupCall();
+        return;
+      }
 
       // Handle Missed / Declined / Busy / Ended
       if (['ended', 'declined', 'missed', 'busy'].includes(data.status)) {
@@ -291,6 +359,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      // Register server-side onDisconnect cleanup (reliable unload handling)
+      onDisconnect(ref(db, `calls/${callDocRefDb.key}`)).update({ status: 'ended' });
+
       const callData: CallData = {
         id: callDocRefDb.key as string,
         callerId: currentUser.uid,
@@ -353,13 +424,17 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
+      // Register server-side onDisconnect cleanup for the callee
+      onDisconnect(ref(db, `calls/${call.id}`)).update({ status: 'ended' });
+
       await update(ref(db, `calls/${call.id}`), {
         answer: { type: answer.type, sdp: answer.sdp },
-        status: 'ongoing'
+        status: 'ongoing',
+        acceptedBySessionId: sessionIdRef.current
       });
       
       // Update local state early to switch UI
-      setActiveCall({ ...call, status: 'ongoing', answer: { type: answer.type, sdp: answer.sdp }});
+      setActiveCall({ ...call, status: 'ongoing', answer: { type: answer.type, sdp: answer.sdp }, acceptedBySessionId: sessionIdRef.current });
 
     } catch (err: any) {
       console.error("Failed to accept call:", err);
