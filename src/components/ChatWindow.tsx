@@ -26,7 +26,7 @@ function getDateSeparatorLabel(date: Date): string {
 
 const DateSeparator = React.memo(function DateSeparator({ label }: { label: string }) {
   return (
-    <div className="flex justify-center my-4 sticky top-2 z-10">
+    <div className="flex justify-center my-4">
       <span className="bg-[#e9eff3] shadow-sm text-[#5b6b73] text-xs font-medium px-3 py-1.5 rounded-lg">
         {label}
       </span>
@@ -129,8 +129,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         setShowMenu(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   }, []);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -1115,14 +1115,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                     <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-xl shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-2">
                     <button
                       className="w-full text-left px-4 py-2 hover:bg-black/5 flex items-center space-x-3 transition-colors"
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsSearching(true);
-                        setShowMenu(false);
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
                         setIsSearching(true);
                         setShowMenu(false);
                       }}
@@ -1132,14 +1125,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                     </button>
                     <button
                       className="w-full text-left px-4 py-2 hover:bg-black/5 flex items-center space-x-3 transition-colors"
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setForwardSelectionMode(true);
-                        setShowMenu(false);
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      onClick={() => {
                         setForwardSelectionMode(true);
                         setShowMenu(false);
                       }}
