@@ -1212,6 +1212,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
       {/* Input Area */}
       <MessageInput 
+        conversationId={conversationId}
         onSendMessage={handleSendMessage} 
         onSendPoll={handleSendPoll}
         uploadProgress={uploadProgress} 

@@ -27,6 +27,7 @@ const RecordingTimerDisplay = ({ isRecording }: { isRecording: boolean }) => {
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
 interface MessageInputProps {
+  conversationId: string;
   onSendMessage: (text: string, file?: File | Blob | null, duration?: number, replyToMessage?: Message | null) => Promise<void>;
   onSendPoll?: (pollData: PollData) => Promise<void>;
   uploadProgress?: number | null;
@@ -36,7 +37,7 @@ interface MessageInputProps {
   onStopTyping?: () => void;
 }
 
-export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress, replyingTo, onCancelReply, onTyping, onStopTyping }: MessageInputProps) {
+export default function MessageInput({ conversationId, onSendMessage, onSendPoll, uploadProgress, replyingTo, onCancelReply, onTyping, onStopTyping }: MessageInputProps) {
   const [text, setText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
@@ -99,6 +100,17 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
   useEffect(() => {
     recordingStateRef.current = { isRecording, isLocked };
   }, [isRecording, isLocked]);
+
+  // Auto-focus input when opening a conversation
+  useEffect(() => {
+    // Only focus if we're not recording
+    if (!isRecording) {
+      // Small timeout ensures the DOM has settled and mobile keyboard gets triggered
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+    }
+  }, [conversationId]);
 
   // Close menus on click outside or Escape
   useEffect(() => {
@@ -201,8 +213,10 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
       onStopTypingRef.current?.();
       lastTypingSentRef.current = 0;
       setText('');
+      // Force focus immediately after clearing state so keyboard stays open on mobile
       if (inputRef.current) {
         inputRef.current.style.height = 'auto';
+        inputRef.current.focus();
       }
       setShowPicker(false);
       clearFile();
@@ -610,6 +624,8 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
           {/* Normal Send Button (Text/File) */}
           <button 
             type="submit"
+            onMouseDown={(e) => e.preventDefault()}
+            onTouchStart={(e) => e.preventDefault()}
             disabled={(!text.trim() && !selectedFile && !isRecording) || isSending || uploadProgress != null || !!rateLimitMessage}
             className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 ${
               (!text.trim() && !selectedFile && !isRecording) || isSending || uploadProgress != null || !!rateLimitMessage ? 'cursor-not-allowed hidden' : 'block'

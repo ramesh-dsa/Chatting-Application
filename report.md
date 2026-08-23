@@ -19,3 +19,13 @@
 - **Files Changed**: `src/components/IconRail.tsx`, `src/pages/Dashboard.tsx`
 - **Summary**: Removed the `flex-1` class from the `IconRail` root to restore its correct fixed width (64-80px). Corrected the empty state background color in `Dashboard.tsx` from `bg-bg-chat` (beige) to `bg-surface` (gray). Added an `isHiddenOnMobile` prop to `IconRail`, passing it from `Dashboard.tsx` based on `activeConversationId`, which properly hides the bottom nav on mobile when viewing a chat.
 - **Limitations/Edge Cases**: None known. Layout behavior should now strictly adhere to standard WhatsApp Web desktop and mobile behavior.
+
+## Session 2 Bug Fixes & Refinements
+- **Problem/Request**: Several unrelated issues needed addressing: a hook crash in MessageBubble, broken back navigation exiting the app, horizontal scrollbar appearing, and WhatsApp-exact message input focus retention.
+- **Files Changed**: `src/components/MessageBubble.tsx`, `src/pages/Dashboard.tsx`, `src/components/ChatWindow.tsx`, `src/components/MessageInput.tsx`
+- **Summary**:
+  - **Hooks Crash**: Moved `useEffect` and all hooks in `MessageBubble.tsx` above all conditional early returns, strictly adhering to React's rules of hooks.
+  - **Back Navigation**: Added `history.pushState` and `replaceState` to `Dashboard.tsx` along with a `popstate` listener to safely navigate back to the chat list instead of exiting the PWA.
+  - **Horizontal Scroll**: Added `overflow-x-hidden` to `ChatWindow.tsx` and `min-w-0` properties to prevent flex children from expanding out of bounds.
+  - **Input Focus**: Passed `conversationId` to `MessageInput.tsx` for a `useEffect` auto-focus on open. Retained focus after send by calling `.focus()` on the ref. Prevented mobile focus stealing by attaching `e.preventDefault()` on both `onMouseDown` and `onTouchStart` to the send button.
+- **Limitations/Edge Cases**: The PWA back navigation relies on the browser's history API, which requires the initial app load to establish the base state correctly. Mobile keyboard resizing relies heavily on `100dvh` which is typically robust in modern browsers.
