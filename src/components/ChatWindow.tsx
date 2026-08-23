@@ -984,7 +984,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         )}
 
         {/* Header */}
-        <div className="h-[60px] border-b border-border bg-bg-sidebar flex-shrink-0 flex items-center justify-between px-4 z-10">
+        <div className="h-14 border-b border-border bg-bg-sidebar flex-shrink-0 flex items-center justify-between px-4 z-10">
           {isSearching ? (
             <div className="flex-1 flex items-center bg-background rounded-xl px-3 py-1 mr-4 border border-accent/20">
               <button 
@@ -1036,13 +1036,13 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               )}
               <button 
                 onClick={() => conversation.type === 'group' && setShowGroupInfo(true)}
-                className={`flex items-center space-x-3 text-left min-w-0 flex-1 ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
+                className={`flex items-center gap-2 text-left min-w-0 flex-1 ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
               >
-                <div className="relative">
+                <div className="relative flex-shrink-0 w-10 h-10">
                   {chatAvatar ? (
                     <Avatar src={chatAvatar} alt={chatTitle} className="w-10 h-10" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold">
+                    <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center text-accent font-semibold flex-shrink-0">
                       {chatTitle.charAt(0)}
                     </div>
                   )}
@@ -1050,16 +1050,16 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
                   )}
                 </div>
-                <div className="ml-1 flex flex-col justify-center min-w-0 flex-1">
-                  <h2 className="text-[16px] font-normal text-foreground leading-5 truncate">{chatTitle}</h2>
-                  <p className="text-[13px] text-muted-foreground font-normal mt-0.5 truncate block">{chatStatus}</p>
+                <div className="flex flex-col justify-center min-w-0 flex-1">
+                  <h2 className="text-sm font-medium text-foreground truncate">{chatTitle}</h2>
+                  <p className="text-xs text-muted-foreground truncate">{chatStatus}</p>
                 </div>
               </button>
             </div>
           )}
 
           {!isSearching && (
-            <div className="flex items-center space-x-2 relative shrink-0">
+            <div className="flex items-center gap-3 relative flex-shrink-0">
               <button 
                 onClick={() => setShowMediaGallery(true)}
                 className="p-2 text-muted-foreground hover:bg-black/5 hover:text-foreground rounded-full transition-colors"

@@ -189,7 +189,7 @@ const MessageBubble = function MessageBubble({
     );
   }
 
-  const marginBottom = isLastInGroup ? 'mb-4' : 'mb-[2px]';
+  const marginBottom = isLastInGroup ? 'mb-2' : 'mb-1';
 
   // Helper to handle mixed type strings or objects and prevent duplicates from inflating counts.
   const getUniqueUids = (data: any) => {
@@ -297,7 +297,7 @@ const MessageBubble = function MessageBubble({
             onContextMenu={(e) => e.preventDefault()}
             onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
             style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-            className={`pl-[9px] pr-[9px] pt-[6px] pb-[8px] relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none ${radiusClass} ${
+            className={`px-3 py-2 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
@@ -354,7 +354,7 @@ const MessageBubble = function MessageBubble({
                 </div>
               </div>
             ) : message.text && (
-              <p className={`text-[14.2px] whitespace-pre-wrap break-words leading-[19px] relative ${message.attachmentUrl ? 'mb-2' : ''}`}>
+              <p className={`text-sm leading-5 whitespace-pre-wrap break-words relative ${message.attachmentUrl ? 'mb-2' : ''}`}>
                 {message.text}
                 {!message.attachmentUrl && !message.pollData && (
                   <span className="inline-block" style={{ width: message.edited ? '110px' : '75px' }} />
@@ -420,11 +420,11 @@ const MessageBubble = function MessageBubble({
             )}
 
             {/* Timestamp & Ticks placed relatively at the bottom right */}
-            <div className="relative self-end flex items-center justify-end gap-1 shrink-0 mt-1 -mr-1 -mb-1">
+            <div className="relative self-end flex items-center justify-end gap-1 shrink-0 mt-1">
               {message.edited && (
                 <span className="text-[11px] text-muted italic">edited</span>
               )}
-              <span className="text-[11px] text-muted opacity-80 mt-[1px]">
+              <span className="text-xs text-gray-500">
                 {format(message.timestamp, 'h:mm a')}
               </span>
               {isOwnMessage && (
@@ -432,9 +432,9 @@ const MessageBubble = function MessageBubble({
                   {tickState === 'read' ? (
                     <CheckCheck className="w-4 h-4 text-blue-500" />
                   ) : tickState === 'delivered' ? (
-                    <CheckCheck className="w-4 h-4 text-muted-foreground" />
+                    <CheckCheck className="w-4 h-4 text-gray-400" />
                   ) : (
-                    <CheckIcon className="w-4 h-4 text-muted-foreground" />
+                    <CheckIcon className="w-4 h-4 text-gray-400" />
                   )}
                 </span>
               )}
