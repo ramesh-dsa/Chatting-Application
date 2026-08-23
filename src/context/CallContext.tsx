@@ -26,6 +26,7 @@ export interface CallData {
   endedAt?: number;
   conversationId: string;
   acceptedBySessionId?: string;
+  calleeNotified?: boolean;
 }
 
 interface CallContextType {
@@ -186,6 +187,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
             }
             
+            // Write acknowledgment so caller UI updates to "Ringing..."
+            if (!callData.calleeNotified) {
+              update(ref(db, `calls/${callData.id}`), { calleeNotified: true });
+            }
+            
             // Accept incoming call state
             callDocRef.current = callData.id;
             setActiveCall(callData);
@@ -247,7 +253,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, [cleanupCall, currentUser?.uid]);
+  }, [cleanupCall, currentUser?.uid, activeCall?.id]);
 
   // ICE Candidates Listener
   useEffect(() => {

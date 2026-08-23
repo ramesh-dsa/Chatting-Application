@@ -137,7 +137,7 @@ export default function CallOverlay() {
           <h2 className="text-3xl font-semibold drop-shadow-md">{otherName}</h2>
           
           <p className="text-white/80 mt-2 text-lg drop-shadow-md">
-            {activeCall.status === 'ringing' && isCaller && 'Calling...'}
+            {activeCall.status === 'ringing' && isCaller && (activeCall.calleeNotified ? 'Ringing...' : 'Calling...')}
             {activeCall.status === 'ringing' && !isCaller && `Incoming ${isVideo ? 'Video' : 'Voice'} Call`}
             {activeCall.status === 'ongoing' && formatDuration(duration)}
           </p>
