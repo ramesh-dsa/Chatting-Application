@@ -85,6 +85,36 @@ const MessageBubble = function MessageBubble({
   const [isEditing, setIsEditing] = React.useState(false);
   const [editText, setEditText] = React.useState(message.text);
 
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    if ((showMenu || showReactPicker) && bubbleRef.current) {
+      const rect = bubbleRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 250) {
+        setMenuPosition('top');
+      } else {
+        setMenuPosition('bottom');
+      }
+    }
+  }, [showMenu, showReactPicker]);
+
+  const handleTouchStart = () => {
+    isLongPressTriggeredRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      setShowReactPicker(true);
+    }, 500);
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
 
 
   if (message.type === 'system') {
@@ -183,19 +213,11 @@ const MessageBubble = function MessageBubble({
     }
   }
 
-    useEffect(() => {
-    if (showMenu && bubbleRef.current) {
-      const rect = bubbleRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < 250) {
-        setMenuPosition('top');
-      } else {
-        setMenuPosition('bottom');
-      }
-    }
-  }, [showMenu]);
-
   const handleBubbleClick = () => {
+    if (isLongPressTriggeredRef.current) {
+      isLongPressTriggeredRef.current = false;
+      return;
+    }
     if (selectionMode) {
       if (message.type !== 'poll') {
         onToggleSelect?.(message.id);
@@ -234,7 +256,7 @@ const MessageBubble = function MessageBubble({
         </div>
       )}
       <div 
-        className={`flex max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} cursor-pointer`}
+        className={`flex max-w-[85%] sm:max-w-[75%] min-w-0 ${isOwnMessage ? 'flex-row-reverse' : 'flex-row'} cursor-pointer`}
         onClick={handleBubbleClick}
       >
         
@@ -253,7 +275,7 @@ const MessageBubble = function MessageBubble({
         )}
 
         {/* Bubble Container */}
-        <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'}`}>
+        <div className={`flex flex-col min-w-0 ${isOwnMessage ? 'items-end' : 'items-start'}`}>
           {/* Sender Name (only on first message in a group chat) */}
           {!isOwnMessage && isGroupChat && isFirstInGroup && senderProfile && (
             <span className="text-xs font-medium text-emerald-600 ml-1 mb-1">{senderProfile.displayName}</span>
@@ -261,8 +283,14 @@ const MessageBubble = function MessageBubble({
           
           <div 
             id={`msg-${message.id}`}
+            ref={bubbleRef}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={clearLongPressTimer}
+            onTouchMove={clearLongPressTimer}
+            onContextMenu={(e) => e.preventDefault()}
             onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
-            className={`pl-[9px] pr-[9px] pt-[6px] pb-[8px] relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 ${radiusClass} ${
+            style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+            className={`pl-[9px] pr-[9px] pt-[6px] pb-[8px] relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
@@ -436,7 +464,7 @@ const MessageBubble = function MessageBubble({
 
             {/* Reaction Emoji Picker */}
             {showReactPicker && (
-              <div className="absolute bottom-8 right-1 bg-surface border border-border shadow-lg rounded-full py-1 px-1 z-50 flex items-center gap-0.5">
+              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} ${isOwnMessage ? 'right-1' : 'left-1'} bg-surface border border-border shadow-lg rounded-full py-1 px-1 z-[100] flex items-center gap-0.5`}>
                 {REACTION_EMOJIS.map(emoji => (
                   <button
                     key={emoji}
@@ -455,7 +483,7 @@ const MessageBubble = function MessageBubble({
 
             {/* Dropdown Menu */}
             {showMenu && (
-              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} right-2 bg-surface border border-border shadow-lg rounded-lg py-1 z-[100] min-w-[120px]`}>
+              <div className={`absolute ${menuPosition === 'top' ? 'bottom-full mb-1' : 'top-8'} ${isOwnMessage ? 'right-2' : 'left-2'} bg-surface border border-border shadow-lg rounded-lg py-1 min-w-[120px] z-[100] overflow-hidden`}>
                 {message.type !== 'poll' && (
                   <button
                     onMouseDown={(e) => e.preventDefault()}

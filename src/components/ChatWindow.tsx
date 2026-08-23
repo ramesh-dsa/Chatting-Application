@@ -61,6 +61,57 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [messageLimit, setMessageLimit] = useState(50);
+  const isFetchingOlderRef = useRef(false);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
+
+  const hasInitiallyScrolledRef = useRef(false);
+  const [unreadScrollCount, setUnreadScrollCount] = useState(0);
+  const lastScrollHeightRef = useRef<number>(0);
+  const lastMessageCountRef = useRef<number>(0);
+
+  const isNearBottom = useCallback(() => {
+    if (!scrollContainerRef.current) return false;
+    const container = scrollContainerRef.current;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+  }, []);
+
+  useEffect(() => {
+    if (!messagesLoaded || messages.length === 0) return;
+
+    if (isFetchingOlderRef.current) {
+      // Pagination logic: maintain scroll position
+      if (scrollContainerRef.current && lastScrollHeightRef.current > 0) {
+        const container = scrollContainerRef.current;
+        container.scrollTop += (container.scrollHeight - lastScrollHeightRef.current);
+      }
+      isFetchingOlderRef.current = false;
+    } else {
+      // New messages logic
+      const isInitialLoad = !hasInitiallyScrolledRef.current;
+      const countDiff = messages.length - lastMessageCountRef.current;
+      
+      if (isInitialLoad) {
+        hasInitiallyScrolledRef.current = true;
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      } else if (countDiff > 0) {
+        const latestMessage = messages[messages.length - 1];
+        const isOwnMessage = latestMessage?.senderId === currentUser?.uid;
+        
+        if (isOwnMessage || isNearBottom()) {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          if (!isOwnMessage) {
+            setUnreadScrollCount(0);
+          }
+        } else {
+          // User is scrolled up and received new messages
+          setUnreadScrollCount(prev => prev + countDiff);
+        }
+      }
+    }
+    
+    lastMessageCountRef.current = messages.length;
+  }, [messages, messagesLoaded, currentUser?.uid, isNearBottom]);
   
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -77,9 +128,6 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<{ url: string; senderName: string; timestamp: number; name: string } | null>(null);
-  const [messageLimit, setMessageLimit] = useState(50);
-  const isFetchingOlderRef = useRef(false);
-  const [messagesLoaded, setMessagesLoaded] = useState(false);
 
   // Search states
   const [isSearching, setIsSearching] = useState(false);
@@ -449,6 +497,10 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   // Reset loaded state when conversation changes
   useEffect(() => {
     setMessagesLoaded(false);
+    hasInitiallyScrolledRef.current = false;
+    setUnreadScrollCount(0);
+    lastMessageCountRef.current = 0;
+    lastScrollHeightRef.current = 0;
   }, [conversationId]);
 
   // Fetch messages
@@ -512,19 +564,8 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
         } as Message);
       });
       
-      const reversedMsgs = msgs.reverse();
-      setMessages(reversedMsgs);
+      setMessages(msgs);
       setMessagesLoaded(true);
-      
-      // Auto-scroll only if we are not fetching older messages AND we were already at the bottom
-      // or if it's the initial load.
-      if (!isFetchingOlderRef.current) {
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-        }, 100);
-      } else {
-        isFetchingOlderRef.current = false;
-      }
 
       // Handle Read Receipts (Mark all unread messages from others as read & delivered)
       if (currentUser && msgs.length > 0) {
@@ -580,7 +621,14 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (e.currentTarget.scrollTop === 0 && messages.length >= messageLimit) {
       isFetchingOlderRef.current = true;
+      if (scrollContainerRef.current) {
+        lastScrollHeightRef.current = scrollContainerRef.current.scrollHeight;
+      }
       setMessageLimit(prev => prev + 50);
+    }
+
+    if (isNearBottom()) {
+      setUnreadScrollCount(0);
     }
   };
 
@@ -911,7 +959,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               </div>
             </div>
           ) : (
-            <div className="flex items-center space-x-3 sm:space-x-4">
+            <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
               {onBack && (
                 <button 
                   onClick={onBack}
@@ -922,7 +970,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               )}
               <button 
                 onClick={() => conversation.type === 'group' && setShowGroupInfo(true)}
-                className={`flex items-center space-x-3 text-left ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
+                className={`flex items-center space-x-3 text-left min-w-0 ${conversation.type === 'group' ? 'cursor-pointer hover:bg-background rounded-lg p-1 -m-1 transition-colors' : ''}`}
               >
                 <div className="relative">
                   {chatAvatar ? (
@@ -936,9 +984,9 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-accent border-2 border-surface rounded-full"></div>
                   )}
                 </div>
-                <div className="ml-1">
-                  <h2 className="text-[16px] font-normal text-foreground leading-5">{chatTitle}</h2>
-                  <p className="text-[13px] text-muted font-normal mt-0.5">{chatStatus}</p>
+                <div className="ml-1 flex flex-col justify-center min-w-0">
+                  <h2 className="text-[16px] font-normal text-foreground leading-5 truncate">{chatTitle}</h2>
+                  <p className="text-[13px] text-muted font-normal mt-0.5 truncate">{chatStatus}</p>
                 </div>
               </button>
             </div>
@@ -1043,11 +1091,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
 
 
       {/* Message List */}
-      <div 
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 w-full overflow-y-auto p-6 scroll-smooth relative bg-bg-chat"
-      >
+      <div className="flex-1 relative min-h-0 flex flex-col">
+        <div 
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 w-full overflow-y-auto overflow-x-hidden px-4 sm:px-6 pt-6 pb-2 scroll-smooth relative bg-bg-chat"
+        >
         {messagesLoaded && messages.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
             <div className="bg-surface/80 backdrop-blur-sm px-6 py-8 rounded-2xl flex flex-col items-center max-w-[280px] shadow-sm border border-border text-center">
@@ -1142,6 +1191,23 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
           );
         })}
         <div ref={messagesEndRef} />
+        </div>
+        
+        {/* Floating Scroll Button */}
+        {unreadScrollCount > 0 && (
+          <button
+            onClick={() => {
+              setUnreadScrollCount(0);
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="absolute right-6 bottom-4 z-20 flex items-center justify-center w-10 h-10 bg-accent text-white rounded-full shadow-lg hover:bg-accent/90 transition-transform active:scale-95"
+          >
+            <ChevronDown className="w-6 h-6" />
+            <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full border-2 border-white dark:border-gray-900">
+              {unreadScrollCount > 99 ? '99+' : unreadScrollCount}
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Input Area */}

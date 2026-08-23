@@ -38,12 +38,45 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state?.chatOpen) {
+        setActiveConversationId(e.state.conversationId);
+      } else {
+        setActiveConversationId(null);
+        setSearchMessageId(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleSelectConversation = (id: string, msgId?: string) => {
+    if (!activeConversationId) {
+      window.history.pushState({ chatOpen: true, conversationId: id }, '');
+    } else {
+      window.history.replaceState({ chatOpen: true, conversationId: id }, '');
+    }
+    setActiveConversationId(id);
+    setSearchMessageId(msgId || null);
+  };
+
+  const handleBack = () => {
+    if (window.history.state?.chatOpen) {
+      window.history.back();
+    } else {
+      setActiveConversationId(null);
+      setSearchMessageId(null);
+    }
+  };
+
   return (
-    <div className="flex h-[100dvh] bg-background overflow-hidden pb-[60px] md:pb-0 relative">
+    <div className={`flex h-[100dvh] bg-background overflow-hidden relative ${activeConversationId ? 'pb-0' : 'pb-[60px] md:pb-0'}`}>
       <IconRail 
         onProfileClick={() => setShowMyProfile(true)} 
         onChatsClick={() => setShowMyProfile(false)}
         activeTab={showMyProfile ? "profile" : "chats"}
+        isHiddenOnMobile={!!activeConversationId}
       />
 
       {/* Sidebar - hidden on mobile if a chat is active */}
@@ -54,10 +87,7 @@ export default function Dashboard() {
           isUsersLoaded={isUsersLoaded}
           showMyProfile={showMyProfile}
           setShowMyProfile={setShowMyProfile}
-          onSelectConversation={(id, msgId) => {
-            setActiveConversationId(id);
-            setSearchMessageId(msgId || null);
-          }} 
+          onSelectConversation={(id, msgId) => handleSelectConversation(id, msgId || undefined)} 
         />
       </div>
 
@@ -68,13 +98,10 @@ export default function Dashboard() {
             conversationId={activeConversationId} 
             usersMap={usersMap}
             initialHighlightId={searchMessageId}
-            onBack={() => {
-              setActiveConversationId(null);
-              setSearchMessageId(null);
-            }} 
+            onBack={handleBack} 
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-bg-chat w-full h-full">
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-surface w-full h-full">
             <div className="w-20 h-20 bg-surface rounded-full flex items-center justify-center mb-6 shadow-sm border border-border">
               <MessageSquare className="w-10 h-10 text-muted-foreground opacity-50" />
             </div>

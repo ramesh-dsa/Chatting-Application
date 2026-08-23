@@ -4,6 +4,26 @@ import CreatePollModal from './CreatePollModal';
 import type { Message, PollData } from '../types';
 import { stripHTML } from '../utils/sanitize';
 
+const RecordingTimerDisplay = ({ isRecording }: { isRecording: boolean }) => {
+  const [time, setTime] = useState(0);
+  
+  useEffect(() => {
+    if (!isRecording) {
+      setTime(0);
+      return;
+    }
+    setTime(0);
+    const interval = setInterval(() => {
+      setTime(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  const m = Math.floor(time / 60);
+  const s = time % 60;
+  return <span className="text-sm font-mono">{m}:{s < 10 ? '0' : ''}{s}</span>;
+};
+
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
 interface MessageInputProps {
@@ -27,7 +47,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
 
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimeRef = useRef(0);
   const [isLocked, setIsLocked] = useState(false);
   const [slideOffset, setSlideOffset] = useState(0);
   const [micError, setMicError] = useState<string | null>(null);
@@ -235,7 +255,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
 
       mediaRecorder.start();
       setIsRecording(true);
-      setRecordingTime(0);
+      recordingTimeRef.current = 0;
       setIsLocked(false);
       setSlideOffset(0);
 
@@ -243,7 +263,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
       startYRef.current = e.clientY;
 
       timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
+        recordingTimeRef.current += 1;
       }, 1000);
 
       // Add global listeners for drag & drop out of element
@@ -273,7 +293,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
   };
 
   const sendRecording = () => {
-    const currentDuration = recordingTime;
+    const currentDuration = recordingTimeRef.current;
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
       recorder.onstop = async () => {
@@ -298,7 +318,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
     setIsRecording(false);
     setIsLocked(false);
     setSlideOffset(0);
-    setRecordingTime(0);
+    recordingTimeRef.current = 0;
     mediaRecorderRef.current = null;
     window.removeEventListener('pointermove', handlePointerMove);
     window.removeEventListener('pointerup', handlePointerUp);
@@ -335,11 +355,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
+
 
   // ---------------------------------
   // Render
@@ -551,7 +567,7 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
               ) : (
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
               )}
-              <span className="text-sm font-mono">{formatTime(recordingTime)}</span>
+              <RecordingTimerDisplay isRecording={isRecording} />
             </div>
             
             {!isLocked && (
@@ -589,46 +605,39 @@ export default function MessageInput({ onSendMessage, onSendPoll, uploadProgress
         </div>
 
         {/* Right Side: Send/Mic Button */}
-        <div className="shrink-0 flex items-center justify-center">
-          {!isRecording && (
-            <>
-              <button 
-                type="button"
-                onPointerDown={startRecording}
-                disabled={isSending || uploadProgress != null || !!rateLimitMessage}
-                className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 touch-none ${
-                  (isSending || uploadProgress != null || !!rateLimitMessage) ? 'opacity-50 cursor-not-allowed' : ''
-                } ${text.trim() || selectedFile ? 'hidden' : 'block'}`}
-              >
-                <Mic className="w-5 h-5" />
-              </button>
-              <button 
-                type="submit"
-                disabled={(!text.trim() && !selectedFile) || isSending || uploadProgress != null || !!rateLimitMessage}
-                className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 ${
-                  (!text.trim() && !selectedFile) || isSending || uploadProgress != null || !!rateLimitMessage ? 'cursor-not-allowed hidden' : 'block'
-                }`}
-              >
-                <Send className="w-5 h-5 ml-0.5" />
-              </button>
-            </>
-          )}
+        <div className="shrink-0 flex items-center justify-center relative">
+          
+          {/* Normal Send Button (Text/File) */}
+          <button 
+            type="submit"
+            disabled={(!text.trim() && !selectedFile && !isRecording) || isSending || uploadProgress != null || !!rateLimitMessage}
+            className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white hover:scale-105 active:scale-95 ${
+              (!text.trim() && !selectedFile && !isRecording) || isSending || uploadProgress != null || !!rateLimitMessage ? 'cursor-not-allowed hidden' : 'block'
+            } ${isRecording ? 'hidden' : ''}`}
+          >
+            <Send className="w-5 h-5 ml-0.5" />
+          </button>
 
-          {isRecording && (
-            <div 
-              className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white relative ${isLocked ? 'hover:scale-105 active:scale-95 cursor-pointer' : ''}`}
-              style={{ transform: !isLocked ? `translate(${slideOffset}px, 0)` : 'none' }}
-              onClick={isLocked ? sendRecording : undefined}
-            >
-              <Send className="w-5 h-5 ml-0.5" />
-              {!isLocked && (
-                <div className="absolute -top-12 flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 text-accent">
-                  <Lock className="w-4 h-4 mb-1" />
-                  <ChevronUp className="w-4 h-4" />
-                </div>
-              )}
-            </div>
-          )}
+          {/* Mic / Recording Button */}
+          <button 
+            type="button"
+            onPointerDown={!isRecording ? startRecording : undefined}
+            onClick={(isRecording && isLocked) ? sendRecording : undefined}
+            disabled={(!isRecording && (isSending || uploadProgress != null || !!rateLimitMessage))}
+            className={`w-[44px] h-[44px] rounded-full flex items-center justify-center shadow-sm transition-all duration-200 bg-accent text-white touch-none relative ${
+              (!isRecording && (isSending || uploadProgress != null || !!rateLimitMessage)) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+            } ${(text.trim() || selectedFile) && !isRecording ? 'hidden' : 'block'}`}
+            style={{ transform: (isRecording && !isLocked) ? `translate(${slideOffset}px, 0)` : 'none' }}
+          >
+            {isRecording ? <Send className="w-5 h-5 ml-0.5" /> : <Mic className="w-5 h-5" />}
+            
+            {isRecording && !isLocked && (
+              <div className="absolute -top-12 flex flex-col items-center animate-in fade-in slide-in-from-bottom-2 text-accent">
+                <Lock className="w-4 h-4 mb-1" />
+                <ChevronUp className="w-4 h-4" />
+              </div>
+            )}
+          </button>
         </div>
       </form>
 
