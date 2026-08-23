@@ -182,14 +182,14 @@ const MessageBubble = function MessageBubble({
   if (safeIncludes(message.deletedFor, currentUserId)) {
     return (
       <div className={`flex w-full mb-4 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
-        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${radiusClass} ${isOwnMessage ? 'bg-bg-msg-sent' : 'bg-surface'}`}>
+        <div className={`px-4 py-2 text-sm italic text-muted-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${radiusClass} ${isOwnMessage ? 'bg-blue-200' : 'bg-gray-200'}`}>
           🚫 You deleted this message
         </div>
       </div>
     );
   }
 
-  const marginBottom = isLastInGroup ? 'mb-2' : 'mb-1';
+  const marginBottom = isLastInGroup ? 'mb-3' : 'mb-1';
 
   // Helper to handle mixed type strings or objects and prevent duplicates from inflating counts.
   const getUniqueUids = (data: any) => {
@@ -299,10 +299,10 @@ const MessageBubble = function MessageBubble({
             style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
             className={`px-3 py-2 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none ${radiusClass} ${
               isHighlighted || isSelected
-                ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
+                ? 'bg-accent/40 text-gray-900 ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
-                  ? 'bg-bg-msg-sent text-foreground' 
-                  : 'bg-surface text-foreground'
+                  ? 'bg-blue-200 text-gray-900' 
+                  : 'bg-gray-200 text-gray-900'
             }`}
           >
             {/* Reply Quote */}
@@ -432,9 +432,9 @@ const MessageBubble = function MessageBubble({
                   {tickState === 'read' ? (
                     <CheckCheck className="w-4 h-4 text-blue-500" />
                   ) : tickState === 'delivered' ? (
-                    <CheckCheck className="w-4 h-4 text-gray-400" />
+                    <CheckCheck className="w-4 h-4 text-gray-500" />
                   ) : (
-                    <CheckIcon className="w-4 h-4 text-gray-400" />
+                    <CheckIcon className="w-4 h-4 text-gray-500" />
                   )}
                 </span>
               )}

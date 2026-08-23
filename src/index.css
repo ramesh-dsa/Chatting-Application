@@ -74,18 +74,24 @@
 
   /* Custom scrollbar - professional light theme */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(33, 33, 33, 0.15);
-    border-radius: 10px;
+    background-color: #D1D5DB;
+    border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(33, 33, 33, 0.25);
+    background-color: #9CA3AF;
+  }
+  
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #D1D5DB transparent;
   }
 }
 
