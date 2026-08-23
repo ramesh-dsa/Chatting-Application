@@ -58,10 +58,10 @@ export default function AuthLayout() {
           color="#8B5CF6"
           speed={1.0}
           mouseInteractive={false}
-          renderScale={isMobile ? 0.45 : 0.7}
+          renderScale={isMobile ? 0.45 : 0.55}
           maxDpr={isMobile ? 1.25 : 1.5}
           targetFps={60}
-          iterations={isMobile ? 45 : 60}
+          iterations={isMobile ? 25 : 35}
           reducedMotion={shouldReduceMotion || false}
         />
       </div>

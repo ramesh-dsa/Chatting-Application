@@ -180,6 +180,7 @@ export const Plasma = React.memo<PlasmaProps>(({
     });
 
     const mesh = new Mesh(gl, { geometry, program });
+    const renderState = { scene: mesh };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!mouseInteractive) return;
@@ -232,7 +233,7 @@ export const Plasma = React.memo<PlasmaProps>(({
 
     const renderStaticFrame = () => {
       (program.uniforms.iTime as any).value = 0;
-      renderer.render({ scene: mesh });
+      renderer.render(renderState);
     };
 
     const loop = (t: number) => {
@@ -273,7 +274,7 @@ export const Plasma = React.memo<PlasmaProps>(({
       } else {
         (program.uniforms.iTime as any).value = timeValue;
       }
-      renderer.render({ scene: mesh });
+      renderer.render(renderState);
       raf = requestAnimationFrame(loop);
     };
 
