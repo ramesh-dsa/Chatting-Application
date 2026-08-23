@@ -189,7 +189,7 @@ const MessageBubble = function MessageBubble({
     );
   }
 
-  const marginBottom = isLastInGroup ? 'mb-3' : 'mb-1';
+  const marginBottom = isLastInGroup ? 'mb-2' : 'mb-1';
 
   // Helper to handle mixed type strings or objects and prevent duplicates from inflating counts.
   const getUniqueUids = (data: any) => {
@@ -299,10 +299,10 @@ const MessageBubble = function MessageBubble({
             style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
             className={`px-3 py-2 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none ${radiusClass} ${
               isHighlighted || isSelected
-                ? 'bg-accent/40 text-gray-900 ring-2 ring-accent ring-offset-2'
+                ? 'bg-accent/40 text-foreground ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 
-                  ? 'bg-blue-100 text-gray-900' 
-                  : 'bg-gray-200 text-gray-900'
+                  ? 'bg-bg-msg-sent text-foreground' 
+                  : 'bg-surface text-foreground'
             }`}
           >
             {/* Reply Quote */}
@@ -432,9 +432,9 @@ const MessageBubble = function MessageBubble({
                   {tickState === 'read' ? (
                     <CheckCheck className="w-4 h-4 text-blue-500" />
                   ) : tickState === 'delivered' ? (
-                    <CheckCheck className="w-4 h-4 text-gray-500" />
+                    <CheckCheck className="w-4 h-4 text-gray-400" />
                   ) : (
-                    <CheckIcon className="w-4 h-4 text-gray-500" />
+                    <CheckIcon className="w-4 h-4 text-gray-400" />
                   )}
                 </span>
               )}
