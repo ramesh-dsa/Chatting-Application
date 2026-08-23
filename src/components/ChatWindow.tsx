@@ -1025,7 +1025,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
               </div>
             </div>
           ) : (
-            <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               {onBack && (
                 <button 
                   onClick={onBack}
