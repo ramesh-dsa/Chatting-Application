@@ -297,7 +297,7 @@ const MessageBubble = function MessageBubble({
             onContextMenu={(e) => e.preventDefault()}
             onMouseLeave={() => { setShowMenu(false); setShowReactPicker(false); }}
             style={{ WebkitUserSelect: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-            className={`px-3 py-2 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none ${radiusClass} ${
+            className={`px-3 py-2 relative group shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors duration-500 select-none max-w-xs break-words ${radiusClass} ${
               isHighlighted || isSelected
                 ? 'bg-accent/40 text-gray-900 ring-2 ring-accent ring-offset-2'
                 : isOwnMessage 

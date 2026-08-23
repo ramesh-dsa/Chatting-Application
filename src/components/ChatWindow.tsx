@@ -1107,7 +1107,12 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                   <MoreVertical className="w-5 h-5" />
                 </button>
                 {showMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-xl shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-2">
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowMenu(false)}
+                    />
+                    <div className="absolute right-0 mt-2 w-48 bg-surface border border-border rounded-xl shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-2">
                     <button
                       className="w-full text-left px-4 py-2 hover:bg-black/5 flex items-center space-x-3 transition-colors"
                       onPointerDown={(e) => {
@@ -1143,6 +1148,7 @@ export default function ChatWindow({ conversationId, onBack, initialHighlightId,
                       <span className="text-sm font-medium text-foreground">Select Messages</span>
                     </button>
                   </div>
+                  </>
                 )}
               </div>
               {/* Simple Toast */}
