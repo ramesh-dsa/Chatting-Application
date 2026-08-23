@@ -8,6 +8,26 @@
       }
     },
     
+    "calls": {
+      ".indexOn": ["calleeId"],
+      "$callId": {
+        ".read": "auth != null && (data.child('callerId').val() === auth.uid || data.child('calleeId').val() === auth.uid)",
+        ".write": "auth != null && (!data.exists() ? newData.child('callerId').val() === auth.uid : (data.child('callerId').val() === auth.uid || data.child('calleeId').val() === auth.uid))",
+        
+        "callerCandidates": {
+          "$candidateId": {
+            ".write": "auth != null && root.child('calls/' + $callId + '/callerId').val() === auth.uid"
+          }
+        },
+        
+        "calleeCandidates": {
+          "$candidateId": {
+            ".write": "auth != null && root.child('calls/' + $callId + '/calleeId').val() === auth.uid"
+          }
+        }
+      }
+    },
+    
     "unreadCounts": {
       "$conversationId": {
         "$uid": {
